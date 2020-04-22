@@ -2,16 +2,11 @@ set nocompatible
 filetype off
 set number
 syntax on
-colorscheme turtles
 
-set tabstop=2
-set shiftwidth=2
+set tabstop=4
+set shiftwidth=4
 set expandtab
 
-hi Normal guibg=NONE ctermbg=NONE
-highlight clear LineNr
-highlight clear VertSplit
-highlight clear StatusLineNC
 set fillchars=vert:\| 
 set rtp^=~/.vim/bundle/ctrlp.vim
 set rtp+=~/.vim/bundle/Vundle.vim
@@ -26,6 +21,7 @@ Plugin 'prettier/vim-prettier'
 Plugin 'leafgarland/typescript-vim'
 Plugin 'maxmellon/vim-jsx-pretty'
 Plugin 'ryanoasis/vim-devicons'
+Plugin 'morhetz/gruvbox'
 
 call vundle#end()
 filetype plugin indent on
@@ -55,8 +51,14 @@ set guifont=Lotion
 
 set clipboard=unnamed
 
+" colorscheme turtles
+colorscheme gruvbox
+
+hi Normal guibg=NONE ctermbg=NONE
+highlight clear LineNr
+highlight clear VertSplit
+highlight clear StatusLineNC
+
 let g:prettier#quickfix_auto_focus = 0
 let g:prettier#autoformat = 0
 autocmd BufWritePre *.js,*.jsx,*.mjs,*.ts,*.tsx,*.css,*.less,*.scss,*.json,*.graphql,*.md,*.vue,*.yaml,*.html PrettierAsync
-
-source $HOME/.vim/statusline.vim
