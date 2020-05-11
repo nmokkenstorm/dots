@@ -11,6 +11,12 @@ set fillchars=vert:\|
 set rtp^=~/.vim/bundle/ctrlp.vim
 set rtp+=~/.vim/bundle/Vundle.vim
 
+" Exit noob mode
+noremap <Up> <Nop>
+noremap <Down> <Nop>
+noremap <Left> <Nop>
+noremap <Right> <Nop>
+
 call vundle#begin()
 
 Plugin 'VundleVim/Vundle.vim'
@@ -21,6 +27,7 @@ Plugin 'prettier/vim-prettier'
 Plugin 'leafgarland/typescript-vim'
 Plugin 'maxmellon/vim-jsx-pretty'
 Plugin 'ryanoasis/vim-devicons'
+Plugin 'scrooloose/nerdtree'
 Plugin 'morhetz/gruvbox'
 
 call vundle#end()
@@ -34,7 +41,6 @@ let mapleader = " "
 
 map <leader><leader> :CtrlP<CR>
 map <leader>m :NERDTreeToggle<CR>
-map <leader>g :Gstatus<CR>
 :inoremap <lt>/ </<C-x><C-o><Esc>==gi
 
 " Disable annoying beeping
@@ -45,7 +51,7 @@ set path+=**
 
 set wildmenu
 
-let g:ctrlp_custom_ignore = 'node_modules\|DS_Store\|git\|tags\|storage|\vendor'
+let g:ctrlp_custom_ignore = 'node_modules\|DS_Store\|git\|tags\|storage'
 
 set guifont=Lotion
 
