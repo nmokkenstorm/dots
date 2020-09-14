@@ -17,6 +17,7 @@ noremap <Down> <Nop>
 noremap <Left> <Nop>
 noremap <Right> <Nop>
 
+" Plugin management
 call vundle#begin()
 
 Plugin 'VundleVim/Vundle.vim'
@@ -29,6 +30,7 @@ Plugin 'maxmellon/vim-jsx-pretty'
 Plugin 'ryanoasis/vim-devicons'
 Plugin 'scrooloose/nerdtree'
 Plugin 'morhetz/gruvbox'
+Plugin 'fpob/nette.vim'
 
 call vundle#end()
 filetype plugin indent on
@@ -61,10 +63,20 @@ set clipboard=unnamed
 colorscheme gruvbox
 
 hi Normal guibg=NONE ctermbg=NONE
+
 highlight clear LineNr
 highlight clear VertSplit
 highlight clear StatusLineNC
 
+" Prettier
 let g:prettier#quickfix_auto_focus = 0
 let g:prettier#autoformat = 0
-autocmd BufWritePre *.js,*.jsx,*.mjs,*.ts,*.tsx,*.css,*.less,*.scss,*.json,*.graphql,*.md,*.vue,*.yaml,*.html PrettierAsync
+autocmd BufWritePre *.js,*.jsx,*.mjs,*.ts,*.tsx,*.css,*.less,*.scss,*.graphql,*.md,*.vue,*.yaml PrettierAsync
+
+" Ctags
+set tags=tags;/
+nnoremap <C-]> g<C-]>
+
+" PHP Syntax Folding
+let php_folding=1
+set foldmethod=syntax
