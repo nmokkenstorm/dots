@@ -31,6 +31,9 @@ Plugin 'ryanoasis/vim-devicons'
 Plugin 'scrooloose/nerdtree'
 Plugin 'morhetz/gruvbox'
 Plugin 'fpob/nette.vim'
+Plugin 'prabirshrestha/vim-lsp'
+Plugin 'jparise/vim-graphql'
+Plugin 'mattn/vim-lsp-settings'
 
 call vundle#end()
 filetype plugin indent on
@@ -53,7 +56,7 @@ set path+=**
 
 set wildmenu
 
-let g:ctrlp_custom_ignore = 'node_modules\|DS_Store\|git\|tags\|storage'
+let g:ctrlp_custom_ignore = 'DS_Store\|git\|tags\|storage'
 
 set guifont=Lotion
 
@@ -64,9 +67,9 @@ colorscheme gruvbox
 
 hi Normal guibg=NONE ctermbg=NONE
 
-highlight clear LineNr
-highlight clear VertSplit
-highlight clear StatusLineNC
+" highlight clear LineNr
+" highlight clear VertSplit
+" highlight clear StatusLineNC
 
 " Prettier
 let g:prettier#quickfix_auto_focus = 0
@@ -78,5 +81,9 @@ set tags=tags;/
 nnoremap <C-]> g<C-]>
 
 " PHP Syntax Folding
-let php_folding=1
 set foldmethod=syntax
+set foldlevelstart=999
+let php_folding=1
+
+" LSP
+map ]] :rightbelow vertical :LspDefinition<CR>
