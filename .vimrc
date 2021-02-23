@@ -38,8 +38,6 @@ Plugin 'mattn/vim-lsp-settings'
 call vundle#end()
 filetype plugin indent on
 
-execute pathogen#infect()
-
 let g:jsx_ext_required = 0
 
 let mapleader = " "
@@ -67,10 +65,6 @@ colorscheme gruvbox
 
 hi Normal guibg=NONE ctermbg=NONE
 
-" highlight clear LineNr
-" highlight clear VertSplit
-" highlight clear StatusLineNC
-
 " Prettier
 let g:prettier#quickfix_auto_focus = 0
 let g:prettier#autoformat = 0
@@ -87,3 +81,6 @@ let php_folding=1
 
 " LSP
 map ]] :rightbelow vertical :LspDefinition<CR>
+
+" Fix .gql / .graphql files
+autocmd BufRead,BufNewFile *.{graphql,gql} setlocal filetype=graphql
