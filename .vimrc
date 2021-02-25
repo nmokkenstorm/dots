@@ -8,8 +8,6 @@ set shiftwidth=4
 set expandtab
 
 set fillchars=vert:\| 
-set rtp^=~/.vim/bundle/ctrlp.vim
-set rtp+=~/.vim/bundle/Vundle.vim
 
 " Exit noob mode
 noremap <Up> <Nop>
@@ -17,23 +15,28 @@ noremap <Down> <Nop>
 noremap <Left> <Nop>
 noremap <Right> <Nop>
 
+set rtp^=~/.vim/bundle/ctrlp.vim
+set rtp+=~/.vim/bundle/Vundle.vim
+
 " Plugin management
 call vundle#begin()
 
 Plugin 'VundleVim/Vundle.vim'
-Plugin 'beigebrucewayne/Turtles'
-Plugin 'pangloss/vim-javascript'
+
 Plugin 'airblade/vim-gitgutter'
-Plugin 'prettier/vim-prettier'
+Plugin 'beigebrucewayne/Turtles'
+Plugin 'fpob/nette.vim'
+Plugin 'jparise/vim-graphql'
 Plugin 'leafgarland/typescript-vim'
+Plugin 'mattn/vim-lsp-settings'
 Plugin 'maxmellon/vim-jsx-pretty'
+Plugin 'morhetz/gruvbox'
+Plugin 'pangloss/vim-javascript'
+Plugin 'prabirshrestha/vim-lsp'
+Plugin 'prettier/vim-prettier'
 Plugin 'ryanoasis/vim-devicons'
 Plugin 'scrooloose/nerdtree'
-Plugin 'morhetz/gruvbox'
-Plugin 'fpob/nette.vim'
-Plugin 'prabirshrestha/vim-lsp'
-Plugin 'jparise/vim-graphql'
-Plugin 'mattn/vim-lsp-settings'
+Plugin 't-pope/vim-fugitive'
 
 call vundle#end()
 filetype plugin indent on
@@ -84,3 +87,7 @@ map ]] :rightbelow vertical :LspDefinition<CR>
 
 " Fix .gql / .graphql files
 autocmd BufRead,BufNewFile *.{graphql,gql} setlocal filetype=graphql
+
+let g:prettier#config#tab_width = 2 
+let g:prettier#config#single_quote = 'true'
+let g:prettier#config#semi = 'false'
