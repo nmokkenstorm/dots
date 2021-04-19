@@ -36,7 +36,8 @@ Plugin 'prabirshrestha/vim-lsp'
 Plugin 'prettier/vim-prettier'
 Plugin 'ryanoasis/vim-devicons'
 Plugin 'scrooloose/nerdtree'
-Plugin 't-pope/vim-fugitive'
+Plugin 'tpope/vim-fugitive'
+Plugin 'kien/ctrlp.vim'
 
 call vundle#end()
 filetype plugin indent on
