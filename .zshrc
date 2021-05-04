@@ -4,6 +4,7 @@
 # Path to your oh-my-zsh installation.
 export ZSH="/Users/niels/.oh-my-zsh"
 
+alias ngrok='/Applications/ngrok'
 alias cat='bat'
 
 # Set name of the theme to load --- if set to "random", it will

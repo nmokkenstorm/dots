@@ -20,24 +20,30 @@ set rtp+=~/.vim/bundle/Vundle.vim
 
 " Plugin management
 call vundle#begin()
-
 Plugin 'VundleVim/Vundle.vim'
 
-Plugin 'airblade/vim-gitgutter'
-Plugin 'beigebrucewayne/Turtles'
+" functional stuff
 Plugin 'fpob/nette.vim'
 Plugin 'jparise/vim-graphql'
 Plugin 'leafgarland/typescript-vim'
 Plugin 'mattn/vim-lsp-settings'
 Plugin 'maxmellon/vim-jsx-pretty'
-Plugin 'morhetz/gruvbox'
 Plugin 'pangloss/vim-javascript'
 Plugin 'prabirshrestha/vim-lsp'
 Plugin 'prettier/vim-prettier'
-Plugin 'ryanoasis/vim-devicons'
 Plugin 'scrooloose/nerdtree'
 Plugin 'tpope/vim-fugitive'
-Plugin 'kien/ctrlp.vim'
+Plugin 'ctrlpvim/ctrlp.vim'
+
+" colorschemes and themes
+Plugin 'airblade/vim-gitgutter'
+Plugin 'morhetz/gruvbox'
+Plugin 'ryanoasis/vim-devicons'
+Plugin 'AlessandroYorba/Alduin'
+Plugin 'danilo-augusto/vim-afterglow'
+Plugin 'glepnir/oceanic-material'
+Plugin 'rakr/vim-two-firewatch'
+Plugin 'jaredgorski/SpaceCamp'
 
 call vundle#end()
 filetype plugin indent on
@@ -60,19 +66,22 @@ set wildmenu
 
 let g:ctrlp_custom_ignore = 'DS_Store\|git\|tags\|storage'
 
-set guifont=Lotion
-
 set clipboard=unnamed
 
-" colorscheme turtles
-colorscheme gruvbox
+" colorscheme flags
+let g:alduin_Shout_Become_Ethereal = 1
+let g:two_firewatch_italics=1
+
+" select random colorscheme of selection
+let my_colorschemes = ['alduin', 'gruvbox', 'afterglow', 'oceanic_material', 'two-firewatch']
+execute 'colorscheme' my_colorschemes[rand() % (len(my_colorschemes) - 1 ) ]
 
 hi Normal guibg=NONE ctermbg=NONE
 
 " Prettier
 let g:prettier#quickfix_auto_focus = 0
 let g:prettier#autoformat = 0
-autocmd BufWritePre *.js,*.jsx,*.mjs,*.ts,*.tsx,*.css,*.less,*.scss,*.graphql,*.md,*.vue,*.yaml PrettierAsync
+autocmd BufWritePre *.js,*.jsx,*.ts,*.tsx,*.css,*.less,*.scss,*.graphql,*.md,*.yaml PrettierAsync
 
 " Ctags
 set tags=tags;/
@@ -89,6 +98,10 @@ map ]] :rightbelow vertical :LspDefinition<CR>
 " Fix .gql / .graphql files
 autocmd BufRead,BufNewFile *.{graphql,gql} setlocal filetype=graphql
 
+" Fix prettier
 let g:prettier#config#tab_width = 2 
 let g:prettier#config#single_quote = 'true'
 let g:prettier#config#semi = 'false'
+
+" Minimalist NERDTree
+let NERDTreeMinimalUI=1
