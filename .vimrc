@@ -9,7 +9,7 @@ set expandtab
 
 set fillchars=vert:\| 
 
-" Exit noob mode
+" Exit noob mode, enter the void
 noremap <Up> <Nop>
 noremap <Down> <Nop>
 noremap <Left> <Nop>
@@ -33,17 +33,19 @@ Plugin 'prabirshrestha/vim-lsp'
 Plugin 'prettier/vim-prettier'
 Plugin 'scrooloose/nerdtree'
 Plugin 'tpope/vim-fugitive'
+Plugin 'tpope/vim-rhubarb'
 Plugin 'ctrlpvim/ctrlp.vim'
+Plugin 'ycm-core/YouCompleteMe'
 
 " colorschemes and themes
-Plugin 'airblade/vim-gitgutter'
-Plugin 'morhetz/gruvbox'
-Plugin 'ryanoasis/vim-devicons'
 Plugin 'AlessandroYorba/Alduin'
+Plugin 'airblade/vim-gitgutter'
+Plugin 'arcticicestudio/nord-vim'
 Plugin 'danilo-augusto/vim-afterglow'
-Plugin 'glepnir/oceanic-material'
-Plugin 'rakr/vim-two-firewatch'
 Plugin 'jaredgorski/SpaceCamp'
+Plugin 'morhetz/gruvbox'
+Plugin 'rakr/vim-two-firewatch'
+Plugin 'ryanoasis/vim-devicons'
 
 call vundle#end()
 filetype plugin indent on
@@ -73,8 +75,8 @@ let g:alduin_Shout_Become_Ethereal = 1
 let g:two_firewatch_italics=1
 
 " select random colorscheme of selection
-let my_colorschemes = ['alduin', 'gruvbox', 'afterglow', 'oceanic_material', 'two-firewatch']
-execute 'colorscheme' my_colorschemes[rand() % (len(my_colorschemes) - 1 ) ]
+let my_colorschemes = ['gruvbox']
+execute 'colorscheme' my_colorschemes[rand() % (len(my_colorschemes) ) ]
 
 hi Normal guibg=NONE ctermbg=NONE
 
@@ -94,6 +96,7 @@ let php_folding=1
 
 " LSP
 map ]] :rightbelow vertical :LspDefinition<CR>
+map [[ :LspHover<CR>
 
 " Fix .gql / .graphql files
 autocmd BufRead,BufNewFile *.{graphql,gql} setlocal filetype=graphql
