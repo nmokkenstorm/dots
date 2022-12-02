@@ -56,7 +56,7 @@ let g:jsx_ext_required = 0
 
 let mapleader = " "
 
-map <leader><leader> :CtrlP<CR>
+map <leader><leader> :GitFiles<CR>
 map <leader>m :NERDTreeToggle<CR>
 :inoremap <lt>/ </<C-x><C-o><Esc>==gi
 
