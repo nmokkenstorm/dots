@@ -46,6 +46,8 @@ Plugin 'jaredgorski/SpaceCamp'
 Plugin 'morhetz/gruvbox'
 Plugin 'rakr/vim-two-firewatch'
 Plugin 'ryanoasis/vim-devicons'
+Plugin 'junegunn/fzf', { 'do': { -> fzf#install() } }
+Plugin 'junegunn/fzf.vim'
 
 call vundle#end()
 filetype plugin indent on
