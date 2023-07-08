@@ -36,6 +36,8 @@ Plugin 'tpope/vim-fugitive'
 Plugin 'tpope/vim-rhubarb'
 Plugin 'ctrlpvim/ctrlp.vim'
 Plugin 'ycm-core/YouCompleteMe'
+Plugin 'eslint/eslint'
+Plugin 'prisma/vim-prisma'
 
 " colorschemes and themes
 Plugin 'AlessandroYorba/Alduin'
@@ -84,8 +86,8 @@ hi Normal guibg=NONE ctermbg=NONE
 
 " Prettier
 let g:prettier#quickfix_auto_focus = 0
-let g:prettier#autoformat = 0
-autocmd BufWritePre *.js,*.jsx,*.ts,*.tsx,*.css,*.less,*.scss,*.graphql,*.md,*.yaml PrettierAsync
+" let g:prettier#autoformat = 0 
+" autocmd BufWritePre *.js,*.jsx,*.ts,*.tsx,*.css,*.less,*.scss,*.graphql,*.md,*.yaml PrettierAsync
 
 " Ctags
 set tags=tags;/
@@ -105,8 +107,11 @@ autocmd BufRead,BufNewFile *.{graphql,gql} setlocal filetype=graphql
 
 " Fix prettier
 let g:prettier#config#tab_width = 2 
-let g:prettier#config#single_quote = 'true'
+let g:prettier#config#single_quote = 'false'
 let g:prettier#config#semi = 'false'
+let g:prettier#config#print_width = 80 
+
+au BufRead,BufNewFile *.md setlocal textwidth=80
 
 " Minimalist NERDTree
 let NERDTreeMinimalUI=1
