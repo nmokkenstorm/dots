@@ -1,0 +1,13 @@
+[user]
+	name = Niels Mokkenstorm
+	email = niels@mokkenstorm.dev
+[core]
+	excludesfile = /Users/niels/.gitignore_global
+[pull]
+	rebase = false
+[rebase]
+	instructionFormat = (%an <%ae>) %s
+[init]
+	defaultBranch = main
+[push]
+	autoSetupRemote = true
