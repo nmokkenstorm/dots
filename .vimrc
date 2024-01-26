@@ -83,12 +83,15 @@ let g:two_firewatch_italics=1
 let my_colorschemes = ['gruvbox']
 execute 'colorscheme' my_colorschemes[rand() % (len(my_colorschemes) ) ]
 
-hi Normal guibg=NONE ctermbg=NONE
-
 " Prettier
 let g:prettier#quickfix_auto_focus = 0
 " let g:prettier#autoformat = 0 
 " autocmd BufWritePre *.js,*.jsx,*.ts,*.tsx,*.css,*.less,*.scss,*.graphql,*.md,*.yaml PrettierAsync
+
+hi Normal guibg=NONE ctermbg=NONE
+hi! Normal ctermbg=NONE ctermfg=NONE guifg=NONE guibg=NONE
+hi! LineNr ctermbg=NONE ctermfg=NONE guifg=NONE guibg=NONE
+highlight EndOfBuffer ctermfg=black ctermbg=black
 
 " Ctags
 set tags=tags;/
