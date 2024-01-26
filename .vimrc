@@ -3,6 +3,8 @@ filetype off
 set number
 syntax on
 
+set background=dark
+
 set tabstop=4
 set shiftwidth=4
 set expandtab
@@ -42,7 +44,6 @@ Plugin 'github/copilot.vim'
 
 " colorschemes and themes
 Plugin 'AlessandroYorba/Alduin'
-Plugin 'airblade/vim-gitgutter'
 Plugin 'arcticicestudio/nord-vim'
 Plugin 'danilo-augusto/vim-afterglow'
 Plugin 'jaredgorski/SpaceCamp'
@@ -79,9 +80,7 @@ set clipboard=unnamed
 let g:alduin_Shout_Become_Ethereal = 1
 let g:two_firewatch_italics=1
 
-" select random colorscheme of selection
-let my_colorschemes = ['gruvbox']
-execute 'colorscheme' my_colorschemes[rand() % (len(my_colorschemes) ) ]
+colorscheme gruvbox
 
 " Prettier
 let g:prettier#quickfix_auto_focus = 0
@@ -91,7 +90,10 @@ let g:prettier#quickfix_auto_focus = 0
 hi Normal guibg=NONE ctermbg=NONE
 hi! Normal ctermbg=NONE ctermfg=NONE guifg=NONE guibg=NONE
 hi! LineNr ctermbg=NONE ctermfg=NONE guifg=NONE guibg=NONE
-highlight EndOfBuffer ctermfg=black ctermbg=black
+
+hi NonText ctermbg=none
+hi Normal guibg=NONE ctermbg=NONE
+hi EndOfBuffer ctermfg=black
 
 " Ctags
 set tags=tags;/
