@@ -38,6 +38,7 @@ Plugin 'ctrlpvim/ctrlp.vim'
 Plugin 'ycm-core/YouCompleteMe'
 Plugin 'eslint/eslint'
 Plugin 'prisma/vim-prisma'
+Plugin 'github/copilot.vim'
 
 " colorschemes and themes
 Plugin 'AlessandroYorba/Alduin'
