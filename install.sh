@@ -8,4 +8,4 @@ ln -sf  $(pwd)/.vimrc ~/.vimrc
 ln -sf  $(pwd)/.zshrc ~/.zshrc
 
 # global gitignore
-git config --global core.excludesfile ${pwd}/.globalgitignore
+git config --global core.excludesfile ~/.globalgitignore
