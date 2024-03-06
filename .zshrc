@@ -2,31 +2,21 @@
 # export PATH=$HOME/bin:/usr/local/bin:$PATH
 
 # Path to your oh-my-zsh installation.
-export ZSH="/Users/niels/.oh-my-zsh"
+export ZSH="/Users/nielsmokkenstorm/.oh-my-zsh"
 
 alias ngrok='/Applications/ngrok'
 alias cat='bat'
 
-# time all commands
-preexec() {
-  timer=$(gdate +%s.%N)
-}
-
-precmd() {
-  if [ -n "$timer" ]; then
-    now=$(gdate +%s.%N)
-    elapsed=$(echo "$now - $timer" | bc)
-    timer_show=$(printf "%.2f" $elapsed)
-    echo "Execution time: ${timer_show}s"
-    unset timer
-  fi
-}
 
 # Set name of the theme to load --- if set to "random", it will
 # load a random theme each time oh-my-zsh is loaded, in which case,
 # to know which specific one was loaded, run: echo $RANDOM_THEME
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
 ZSH_THEME="robbyrussell"
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"  # This loads nvm
+[ -s "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm"  # This loads nvm bash_completion
 
 # Set list of themes to pick from when loading at random
 # Setting this variable when ZSH_THEME=random will cause zsh to load

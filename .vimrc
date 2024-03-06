@@ -114,7 +114,8 @@ autocmd BufRead,BufNewFile *.{graphql,gql} setlocal filetype=graphql
 " Fix prettier
 let g:prettier#config#tab_width = 2 
 let g:prettier#config#single_quote = 'false'
-let g:prettier#config#semi = 'false'
+let g:prettier#config#semi = 'true'
+let g:prettier#config#trailing_comma = 'all'
 let g:prettier#config#print_width = 80 
 
 au BufRead,BufNewFile *.md setlocal textwidth=80
