@@ -7,6 +7,14 @@ export ZSH="/Users/nielsmokkenstorm/.oh-my-zsh"
 alias ngrok='/Applications/ngrok'
 alias cat='bat'
 
+export PYTHONPATH=$(brew --prefix)/lib/python3.13/site-packages
+
+pw() {
+  branch=${1:-'origin/main'}
+  git add -p && git commit -m 'wip' && git fetch && git rebase $branch && git push --force-with-lease
+}
+
+JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION=1
 
 # Set name of the theme to load --- if set to "random", it will
 # load a random theme each time oh-my-zsh is loaded, in which case,
@@ -115,3 +123,4 @@ export PATH="/usr/local/opt/ruby/bin:/usr/local/lib/ruby/gems/3.0.0/bin:$PATH"
 export PATH="$HOME/.gem/ruby/2.6.0/bin:$PATH"
 export PATH="/usr/local/opt/ruby/bin:$PATH"
 export PATH="/usr/local/opt/ruby/bin:/usr/local/lib/ruby/gems/3.0.0/bin:$PATH"
+export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
