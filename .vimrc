@@ -52,6 +52,7 @@ Plugin 'rakr/vim-two-firewatch'
 Plugin 'ryanoasis/vim-devicons'
 Plugin 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plugin 'junegunn/fzf.vim'
+Plugin 'kadekillary/Turtles'
 
 call vundle#end()
 filetype plugin indent on
@@ -122,3 +123,5 @@ au BufRead,BufNewFile *.md setlocal textwidth=80
 
 " Minimalist NERDTree
 let NERDTreeMinimalUI=1
+
+let g:ycm_clangd_binary_path = trim(system('brew --prefix llvm')).'/bin/clangd'
