@@ -8,6 +8,9 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 # symlink dots
 ln -sf "$root/.vimrc" ~/.vimrc
 ln -sf "$root/.zshrc" ~/.zshrc
+ln -sf "$root/.gitconfig" ~/.gitconfig
+ln -sf "$root/.globalgitignore" ~/.globalgitignore
+ln -sf "$root/.tmux.conf" ~/.tmux.conf
 
 mkdir -p ~/.config
 mkdir -p ~/.config/alacritty
@@ -15,6 +18,9 @@ mkdir -p ~/.config/alacritty/themes
 git clone https://github.com/alacritty/alacritty-theme ~/.config/alacritty/themes
 
 ln -sf "$root/.config/alacritty/alacritty.toml" ~/.config/alacritty/alacritty.toml
+
+mkdir -p ~/.config/1Password/ssh
+ln -sf "$root/.config/1Password/ssh/agent.toml" ~/.config/1Password/ssh/agent.toml
 
 ln -sf "$root/.config/nvim" ~/.config/nvim
 
