@@ -1,5 +1,7 @@
 [[ssh-keys]]
 vault = "Business"
+account = "Niels Mokkenstorm"
 
 [[ssh-keys]]
-value = "Personal"
+vault = "Personal"
+account = "Niels Mokkenstorm"
