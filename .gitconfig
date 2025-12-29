@@ -11,3 +11,5 @@
 	defaultBranch = main
 [push]
 	autoSetupRemote = true
+[alias]
+	tree = log --oneline --decorate --all --graph

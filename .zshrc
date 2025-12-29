@@ -165,3 +165,12 @@ alias dcps='docker compose ps | docker-color-output'
 # This section can be safely removed at any time if needed.
 [[ ! -r '/Users/niels/.opam/opam-init/init.zsh' ]] || source '/Users/niels/.opam/opam-init/init.zsh' > /dev/null 2> /dev/null
 # END opam configuration
+
+# Created by `pipx` on 2025-12-29 18:40:28
+export PATH="$PATH:/Users/niels/.local/bin"
+
+# Auto-start tmux in Alacritty only (not SSH, not already in tmux)
+if [[ "$TERM" == "alacritty" ]] && [[ -z "$TMUX" ]] && [[ -z "$SSH_CONNECTION" ]]; then
+  # Attach to existing session or create new one named 'main'
+  tmux attach-session -t main 2>/dev/null || tmux new-session -s main
+fi
