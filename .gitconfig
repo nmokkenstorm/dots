@@ -2,7 +2,7 @@
 	name = Niels Mokkenstorm
 	email = niels@mokkenstorm.dev
 [core]
-	excludesfile = /Users/niels/.gitignore_global
+	excludesfile = /Users/niels/.globalgitignore
 [pull]
 	rebase = false
 [rebase]
