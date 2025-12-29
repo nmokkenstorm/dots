@@ -122,9 +122,26 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   end,
 })
 
+-- Auto-open Trouble for quickfix/location list operations
 vim.api.nvim_create_autocmd('QuickFixCmdPost', {
   callback = function()
     vim.cmd [[Trouble qflist open]]
+  end,
+})
+
+-- Auto-open Trouble when diagnostics are found (debounced)
+local diagnostic_timer = nil
+vim.api.nvim_create_autocmd({ 'DiagnosticChanged' }, {
+  callback = function()
+    if diagnostic_timer then
+      vim.fn.timer_stop(diagnostic_timer)
+    end
+    diagnostic_timer = vim.fn.timer_start(1000, function()
+      local diagnostics = vim.diagnostic.get(0)
+      if #diagnostics > 0 then
+        vim.cmd [[Trouble diagnostics open filter.buf=0]]
+      end
+    end)
   end,
 })
 
@@ -661,15 +678,15 @@ require('lazy').setup({
       -- Snippet Engine & its associated nvim-cmp source
       {
         'L3MON4D3/LuaSnip',
-        build = (function()
-          -- Build Step is needed for regex support in snippets.
-          -- This step is not supported in many windows environments.
-          -- Remove the below condition to re-enable on windows.
-          if vim.fn.has 'win32' == 1 or vim.fn.executable 'make' == 0 then
-            return
-          end
-          return 'make install_jsregexp'
-        end)(),
+        -- build = (function()
+        --   -- Build Step is needed for regex support in snippets.
+        --   -- This step is not supported in many windows environments.
+        --   -- Remove the below condition to re-enable on windows.
+        --   if vim.fn.has 'win32' == 1 or vim.fn.executable 'make' == 0 then
+        --     return
+        --   end
+        --   return 'make install_jsregexp'
+        -- end)(),
         dependencies = {
           -- `friendly-snippets` contains a variety of premade snippets.
           --    See the README about individual language/framework/plugin snippets:
@@ -879,23 +896,29 @@ require('lazy').setup({
   },
   {
     'folke/trouble.nvim',
-    opts = {},
-    cmd = 'Trouble',
-    modes = {
-      preview_float = {
-        mode = 'diagnostics',
-        preview = {
-          type = 'float',
-          relative = 'editor',
-          border = 'rounded',
-          title = 'Preview',
-          title_pos = 'center',
-          position = { 0, -2 },
-          size = { width = 0.3, height = 0.3 },
-          zindex = 200,
+    opts = {
+      auto_close = true, -- Auto-close when no items
+      auto_preview = true, -- Auto-preview item under cursor
+      focus = true, -- Focus Trouble window when opened
+      follow = true, -- Follow current file in Trouble
+      restore = true, -- Restore last Trouble window position
+      modes = {
+        preview_float = {
+          mode = 'diagnostics',
+          preview = {
+            type = 'float',
+            relative = 'editor',
+            border = 'rounded',
+            title = 'Preview',
+            title_pos = 'center',
+            position = { 0, -2 },
+            size = { width = 0.3, height = 0.3 },
+            zindex = 200,
+          },
         },
       },
     },
+    cmd = 'Trouble',
     keys = {
       {
         '<leader>xx',
@@ -926,6 +949,20 @@ require('lazy').setup({
         '<leader>xQ',
         '<cmd>Trouble qflist toggle<cr>',
         desc = 'Quickfix List (Trouble)',
+      },
+      {
+        ']t',
+        function()
+          require('trouble').next { skip_groups = true, jump = true }
+        end,
+        desc = 'Next trouble item',
+      },
+      {
+        '[t',
+        function()
+          require('trouble').prev { skip_groups = true, jump = true }
+        end,
+        desc = 'Previous trouble item',
       },
     },
   },

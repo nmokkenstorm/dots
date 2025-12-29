@@ -91,6 +91,10 @@ plugins=(git colorize github jira vagrant virtualenv pip python brew macos docke
 
 source $ZSH/oh-my-zsh.sh
 
+# Force completion initialization (fixes Claude Code sessions)
+autoload -Uz compinit
+compinit
+
 # Load zsh-syntax-highlighting if available
 if [ -f "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]; then
   source "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
