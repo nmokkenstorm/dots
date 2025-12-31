@@ -1,24 +1,49 @@
-# If you come from bash you might have to change your $PATH.
-# export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
+# Detect OS and export for subshells/prompts
+case "$(uname -s)" in
+  Darwin*)    export OS_TYPE="mac";;
+  Linux*)
+    if grep -qi microsoft /proc/version 2>/dev/null; then
+      export OS_TYPE="wsl"
+    else
+      export OS_TYPE="linux"
+    fi
+    ;;
+  MINGW*|MSYS*|CYGWIN*) export OS_TYPE="windows";;
+  *)          export OS_TYPE="unknown";;
+esac
 
-# Initialize Homebrew
-eval "$(/opt/homebrew/bin/brew shellenv)"
+# Ensure user bin directories are in PATH
+export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH"
 
-# Prefer 1Password's SSH agent if present
-if [ -S "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" ]; then
-  export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+# macOS-specific configuration
+if [[ "$OS_TYPE" == "mac" ]]; then
+  # Initialize Homebrew
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  fi
+
+  # Prefer 1Password's SSH agent if present
+  if [ -S "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" ]; then
+    export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+  fi
 fi
 
 git config --global alias.tree "log --oneline --decorate --all --graph"
 
-alias cat='bat'
+# Use bat if available
+if command -v bat >/dev/null 2>&1 || command -v batcat >/dev/null 2>&1; then
+  alias cat='bat 2>/dev/null || batcat'
+fi
 
 alias sw='f() { git checkout $(git branch | grep $1); };f'
 
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
-export HOMEBREW_NO_INSECURE_REDIRECT=1
+# macOS-specific environment
+if [[ "$OS_TYPE" == "mac" ]]; then
+  export HOMEBREW_NO_INSECURE_REDIRECT=1
+fi
 
 # Set name of the theme to load --- if set to "random", it will
 # load a random theme each time Oh My Zsh is loaded, in which case,
@@ -87,7 +112,14 @@ export HOMEBREW_NO_INSECURE_REDIRECT=1
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git colorize github jira vagrant virtualenv pip python brew macos docker)
+
+# Base plugins for all platforms
+plugins=(git colorize github jira vagrant virtualenv pip python docker)
+
+# Add platform-specific plugins
+if [[ "$OS_TYPE" == "mac" ]]; then
+  plugins+=(brew macos)
+fi
 
 source $ZSH/oh-my-zsh.sh
 
@@ -100,8 +132,10 @@ if [ -f "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-
   source "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 fi
 
-# Initialize Starship prompt
-eval "$(starship init zsh)"
+# Initialize Starship prompt if available
+if command -v starship >/dev/null 2>&1; then
+  eval "$(starship init zsh)"
+fi
 
 # User configuration
 
@@ -131,16 +165,22 @@ eval "$(starship init zsh)"
 # Example aliases
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
-export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"
-export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"
 
-# bun completions
-[ -s "/Users/niels/.bun/_bun" ] && source "/Users/niels/.bun/_bun"
+# macOS-specific paths and tools
+if [[ "$OS_TYPE" == "mac" ]]; then
+  export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"
+  export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
 
-# bun
+  # bun completions (macOS)
+  [ -s "/Users/niels/.bun/_bun" ] && source "/Users/niels/.bun/_bun"
+
+  # pipx (macOS)
+  export PATH="$PATH:/Users/niels/.local/bin"
+fi
+
+# bun (cross-platform)
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
-export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
 
 # Docker color output
 export DOCKER_BUILDKIT=1
@@ -162,19 +202,19 @@ alias ds='docker stats | docker-color-output'
 alias dcps='docker compose ps | docker-color-output'
 
 
-# BEGIN opam configuration
-# This is useful if you're using opam as it adds:
-#   - the correct directories to the PATH
-#   - auto-completion for the opam binary
-# This section can be safely removed at any time if needed.
-[[ ! -r '/Users/niels/.opam/opam-init/init.zsh' ]] || source '/Users/niels/.opam/opam-init/init.zsh' > /dev/null 2> /dev/null
-# END opam configuration
+# macOS-specific: opam configuration
+if [[ "$OS_TYPE" == "mac" ]]; then
+  # BEGIN opam configuration
+  # This is useful if you're using opam as it adds:
+  #   - the correct directories to the PATH
+  #   - auto-completion for the opam binary
+  # This section can be safely removed at any time if needed.
+  [[ ! -r '/Users/niels/.opam/opam-init/init.zsh' ]] || source '/Users/niels/.opam/opam-init/init.zsh' > /dev/null 2> /dev/null
+  # END opam configuration
 
-# Created by `pipx` on 2025-12-29 18:40:28
-export PATH="$PATH:/Users/niels/.local/bin"
-
-# Auto-start tmux in Alacritty only (not SSH, not already in tmux)
-if [[ "$TERM" == "alacritty" ]] && [[ -z "$TMUX" ]] && [[ -z "$SSH_CONNECTION" ]]; then
-  # Attach to existing session or create new one named 'main'
-  tmux attach-session -t main 2>/dev/null || tmux new-session -s main
+  # Auto-start tmux in Alacritty only (not SSH, not already in tmux)
+  if [[ "$TERM" == "alacritty" ]] && [[ -z "$TMUX" ]] && [[ -z "$SSH_CONNECTION" ]]; then
+    # Attach to existing session or create new one named 'main'
+    tmux attach-session -t main 2>/dev/null || tmux new-session -s main
+  fi
 fi

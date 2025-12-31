@@ -2,12 +2,18 @@
 
 # Minimal prompt - user/folder/git/time moved to tmux status bar
 format = """
+$env_var\
 $character"""
 
 palette = 'catppuccin_mocha'
 
 [line_break]
 disabled = true
+
+[env_var.OS_TYPE]
+variable = 'OS_TYPE'
+format = '[$env_value](bold fg:sky) '
+disabled = false
 
 [character]
 disabled = false
