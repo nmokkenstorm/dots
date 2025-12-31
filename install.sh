@@ -19,6 +19,50 @@ fi
 echo "Installing required tools..."
 brew install starship btop tmux alacritty bat || true
 
+# Install Nerd Font
+echo "Installing Fira Code Nerd Font..."
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS via Homebrew
+    brew tap homebrew/cask-fonts
+    brew install --cask font-fira-code-nerd-font || true
+    echo "✓ Fira Code Nerd Font installed"
+elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
+    # Git Bash on Windows
+    echo "Downloading Fira Code Nerd Font..."
+    TEMP_DIR="/c/Users/$USER/AppData/Local/Temp/FiraCodeNF"
+    mkdir -p "$TEMP_DIR"
+    curl -fLo "$TEMP_DIR/FiraCode.zip" https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip
+    unzip -o "$TEMP_DIR/FiraCode.zip" -d "$TEMP_DIR"
+
+    # Use PowerShell to install fonts
+    echo "Installing fonts (requires admin)..."
+    powershell.exe -Command "
+        \$fonts = Get-ChildItem -Path '$TEMP_DIR' -Filter '*.ttf'
+        \$FONTS = 0x14
+        \$objShell = New-Object -ComObject Shell.Application
+        \$objFolder = \$objShell.Namespace(\$FONTS)
+        foreach (\$font in \$fonts) {
+            \$objFolder.CopyHere(\$font.FullName, 0x10)
+        }
+    "
+    rm -rf "$TEMP_DIR"
+    echo "✓ Fira Code Nerd Font installed"
+elif [[ -f /proc/version ]] && grep -qi microsoft /proc/version; then
+    # WSL - fonts need to be installed on Windows side
+    echo "⚠️  WSL detected: Please install fonts on Windows using Git Bash or manually"
+else
+    # Linux
+    FONT_DIR="$HOME/.local/share/fonts"
+    mkdir -p "$FONT_DIR"
+    cd /tmp
+    curl -fLo FiraCode.zip https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip
+    unzip -o FiraCode.zip -d "$FONT_DIR/FiraCode"
+    rm FiraCode.zip
+    fc-cache -fv
+    cd "$root"
+    echo "✓ Fira Code Nerd Font installed"
+fi
+
 # Install oh-my-zsh if not already installed
 if [ ! -d "$HOME/.oh-my-zsh" ]; then
     echo "Installing oh-my-zsh..."
@@ -73,6 +117,7 @@ git config --global core.excludesfile ~/.globalgitignore
 echo "Dotfiles setup complete!"
 echo ""
 echo "Next steps:"
-echo "  1. Open a new terminal to see Starship prompt"
-echo "  2. In tmux, press Ctrl+b then Shift+I to install Catppuccin theme"
-echo "  3. In btop, press Esc → Options → Select 'catppuccin_mocha' theme"
+echo "  1. Set your terminal font to 'FiraCode Nerd Font Mono'"
+echo "  2. Open a new terminal to see Starship prompt"
+echo "  3. In tmux, press Ctrl+b then Shift+I to install Catppuccin theme"
+echo "  4. In btop, press Esc → Options → Select 'catppuccin_mocha' theme"

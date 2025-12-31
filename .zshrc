@@ -28,8 +28,6 @@ if [[ "$OS_TYPE" == "mac" ]]; then
   fi
 fi
 
-git config --global alias.tree "log --oneline --decorate --all --graph"
-
 # Use bat if available
 if command -v bat >/dev/null 2>&1 || command -v batcat >/dev/null 2>&1; then
   alias cat='bat 2>/dev/null || batcat'
@@ -39,6 +37,9 @@ alias sw='f() { git checkout $(git branch | grep $1); };f'
 
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
+
+# Skip slow security checks for completions (safe on personal machine)
+ZSH_DISABLE_COMPFIX=true
 
 # macOS-specific environment
 if [[ "$OS_TYPE" == "mac" ]]; then
@@ -114,7 +115,7 @@ fi
 # Add wisely, as too many plugins slow down shell startup.
 
 # Base plugins for all platforms
-plugins=(git colorize github jira vagrant virtualenv pip python docker)
+plugins=(git docker)
 
 # Add platform-specific plugins
 if [[ "$OS_TYPE" == "mac" ]]; then
@@ -122,10 +123,6 @@ if [[ "$OS_TYPE" == "mac" ]]; then
 fi
 
 source $ZSH/oh-my-zsh.sh
-
-# Force completion initialization (fixes Claude Code sessions)
-autoload -Uz compinit
-compinit
 
 # Load zsh-syntax-highlighting if available
 if [ -f "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]; then
