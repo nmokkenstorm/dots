@@ -231,6 +231,15 @@ if [[ "$OS_TYPE" == "mac" ]]; then
     # Attach to existing session or create new one named 'main'
     tmux attach-session -t main 2>/dev/null || tmux new-session -s main
   fi
+
+  # Weekly backup reminder (show once per week)
+  BACKUP_REMINDER_FILE="$HOME/.last-backup-reminder"
+  if [ ! -f "$BACKUP_REMINDER_FILE" ] || [ $(( ($(date +%s) - $(stat -f %m "$BACKUP_REMINDER_FILE" 2>/dev/null || echo 0)) / 86400 )) -gt 7 ]; then
+    DL_FOLDERS=$(find ~/Downloads -maxdepth 1 -type d ! -name Downloads 2>/dev/null | wc -l | tr -d ' ')
+    DL_TOTAL_FILES=$(find ~/Downloads -type f 2>/dev/null | wc -l | tr -d ' ')
+    echo "💾 Weekly reminder: Back up to LaCie (Downloads: $DL_FOLDERS folders, $DL_TOTAL_FILES files total)"
+    touch "$BACKUP_REMINDER_FILE" 2>/dev/null
+  fi
 fi
 
 export NVM_DIR="$HOME/.nvm"
