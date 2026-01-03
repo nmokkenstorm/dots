@@ -28,6 +28,18 @@ if [[ "$OS_TYPE" == "mac" ]]; then
   fi
 fi
 
+# WSL-specific configuration
+if [[ "$OS_TYPE" == "wsl" ]]; then
+  # Bridge WSL to Windows 1Password SSH agent via npiperelay
+  export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
+  if ! ss -a 2>/dev/null | grep -q "$SSH_AUTH_SOCK"; then
+    rm -f "$SSH_AUTH_SOCK"
+    if command -v npiperelay.exe >/dev/null 2>&1 && command -v socat >/dev/null 2>&1; then
+      (setsid socat UNIX-LISTEN:"$SSH_AUTH_SOCK,fork" EXEC:"npiperelay.exe -ei -s //./pipe/openssh-ssh-agent",nofork &) >/dev/null 2>&1
+    fi
+  fi
+fi
+
 # Use bat if available
 if command -v bat >/dev/null 2>&1 || command -v batcat >/dev/null 2>&1; then
   alias cat='bat 2>/dev/null || batcat'
