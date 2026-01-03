@@ -15,6 +15,11 @@ esac
 # Ensure user bin directories are in PATH
 export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH"
 
+# Initialize Nix (multi-user installation)
+if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+  . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+fi
+
 # macOS-specific configuration
 if [[ "$OS_TYPE" == "mac" ]]; then
   # Initialize Homebrew
@@ -227,3 +232,15 @@ if [[ "$OS_TYPE" == "mac" ]]; then
     tmux attach-session -t main 2>/dev/null || tmux new-session -s main
   fi
 fi
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+
+# pnpm
+export PNPM_HOME="/Users/niels/Library/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+# pnpm end
