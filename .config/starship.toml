@@ -2,8 +2,21 @@
 
 # Minimal prompt - user/folder/git/time moved to tmux status bar
 format = """
-$env_var\
+$directory\
+$git_branch\
 $character"""
+
+[directory]
+truncate_to_repo = true
+style = "bold fg:lavender"
+
+[git_branch]
+format = "on [$symbol$branch]($style) "
+symbol = " "
+style = "bold fg:mauve"
+
+[git_status]
+disabled = true
 
 palette = 'catppuccin_mocha'
 
