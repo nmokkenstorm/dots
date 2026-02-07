@@ -1,7 +1,7 @@
 [[ssh-keys]]
 vault = "Business"
-account = "Niels Mokkenstorm"
+item = "Skalar Bitbucket"
 
 [[ssh-keys]]
 vault = "Personal"
-account = "Niels Mokkenstorm"
+item = "Tangled"

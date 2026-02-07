@@ -5,3 +5,11 @@
 
 # OSX
 .DS_Store
+
+# Local gitignore overrides
+.gitignore.local
+
+# Claude Code
+.claude/
+.agent-shared/
+CLAUDE.md

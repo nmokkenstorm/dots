@@ -17,7 +17,7 @@ fi
 
 # Install required tools
 echo "Installing required tools..."
-brew install starship btop tmux alacritty bat || true
+brew install starship btop tmux alacritty bat jq || true
 
 # Install Nerd Font
 echo "Installing Fira Code Nerd Font..."
@@ -86,6 +86,7 @@ mkdir -p ~/.config/alacritty
 mkdir -p ~/.config/alacritty/themes
 mkdir -p ~/.config/1Password/ssh
 mkdir -p ~/.config/btop/themes
+mkdir -p ~/.claude
 
 # Clone alacritty themes if not already present
 if [ ! -d "$HOME/.config/alacritty/themes/.git" ]; then
@@ -105,10 +106,15 @@ ln -sf "$root/.tmux.conf" ~/.tmux.conf
 
 ln -sf "$root/.config/alacritty/alacritty.toml" ~/.config/alacritty/alacritty.toml
 ln -sf "$root/.config/alacritty/catppuccin-mocha.toml" ~/.config/alacritty/catppuccin-mocha.toml
+ln -sf "$root/.config/alacritty/rose-pine.toml" ~/.config/alacritty/rose-pine.toml
 ln -sf "$root/.config/1Password/ssh/agent.toml" ~/.config/1Password/ssh/agent.toml
 ln -sf "$root/.config/nvim" ~/.config/nvim
 ln -sf "$root/.config/starship.toml" ~/.config/starship.toml
 ln -sf "$root/.config/btop/themes/catppuccin_mocha.theme" ~/.config/btop/themes/catppuccin_mocha.theme
+ln -sf "$root/.config/btop/themes/rose-pine.theme" ~/.config/btop/themes/rose-pine.theme
+ln -sf "$root/.gitconfig-riotbyte" ~/.gitconfig-riotbyte
+ln -sf "$root/.gitconfig-skalar" ~/.gitconfig-skalar
+ln -sf "$root/.claude/statusline.sh" ~/.claude/statusline.sh
 
 # Configure git
 echo "Configuring git..."
@@ -119,5 +125,5 @@ echo ""
 echo "Next steps:"
 echo "  1. Set your terminal font to 'FiraCode Nerd Font Mono'"
 echo "  2. Open a new terminal to see Starship prompt"
-echo "  3. In tmux, press Ctrl+b then Shift+I to install Catppuccin theme"
+echo "  3. In tmux, press Ctrl+s then Shift+I to install tmux plugins"
 echo "  4. In btop, press Esc → Options → Select 'catppuccin_mocha' theme"

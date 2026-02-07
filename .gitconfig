@@ -1,6 +1,12 @@
 [user]
 	name = Niels Mokkenstorm
 	email = niels@mokkenstorm.dev
+
+[includeIf "gitdir:~/Developer/riotbyte/"]
+	path = ~/.gitconfig-riotbyte
+
+[includeIf "gitdir:~/Developer/skalar/"]
+	path = ~/.gitconfig-skalar
 [core]
 	excludesfile = /Users/niels/.globalgitignore
 [pull]
@@ -13,3 +19,27 @@
 	autoSetupRemote = true
 [alias]
 	tree = log --oneline --decorate --all --graph
+[commit]
+	gpgsign = false
+[tag]
+	gpgsign = false
+
+[color]
+	ui = auto
+
+[color "status"]
+	added = green bold
+	changed = yellow bold
+	untracked = red bold
+
+[color "branch"]
+	current = magenta bold
+	local = white
+	remote = cyan
+
+[color "diff"]
+	meta = yellow
+	frag = magenta bold
+	old = red bold
+	new = green bold
+	whitespace = red reverse
