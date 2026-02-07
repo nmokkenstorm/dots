@@ -45,9 +45,11 @@ if [[ "$OS_TYPE" == "wsl" ]]; then
   fi
 fi
 
-# Use bat if available
-if command -v bat >/dev/null 2>&1 || command -v batcat >/dev/null 2>&1; then
-  alias cat='bat 2>/dev/null || batcat'
+# Use bat if available (batcat on Debian/Ubuntu)
+if command -v bat >/dev/null 2>&1; then
+  alias cat='bat'
+elif command -v batcat >/dev/null 2>&1; then
+  alias cat='batcat'
 fi
 
 alias sw='f() { git checkout $(git branch | grep $1); };f'

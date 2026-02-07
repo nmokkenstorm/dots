@@ -1,5 +1,7 @@
 "$schema" = 'https://starship.rs/config-schema.json'
 
+palette = 'catppuccin_mocha'
+
 # Minimal prompt - user/folder/git/time moved to tmux status bar
 format = """
 $directory\
@@ -12,13 +14,11 @@ style = "bold fg:lavender"
 
 [git_branch]
 format = "on [$symbol$branch]($style) "
-symbol = " "
+symbol = ""
 style = "bold fg:mauve"
 
 [git_status]
 disabled = true
-
-palette = 'catppuccin_mocha'
 
 [line_break]
 disabled = true
