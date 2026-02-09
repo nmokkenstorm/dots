@@ -867,9 +867,6 @@ require('lazy').setup({
       require('jj').setup {}
     end,
   },
-  'neovim/nvim-lspconfig',
-  'jose-elias-alvarez/null-ls.nvim',
-  'MunifTanjim/prettier.nvim',
 
   -- Highlight todo, notes, etc in comments
   { 'folke/todo-comments.nvim', event = 'VimEnter', dependencies = { 'nvim-lua/plenary.nvim' }, opts = { signs = false } },
