@@ -43,3 +43,7 @@
 	old = red bold
 	new = green bold
 	whitespace = red reverse
+[log]
+	date = format:%Y-%m-%d %H:%M
+[format]
+	pretty = %C(yellow)%h%Creset %C(green)%ad%Creset %C(blue)%an <%ae>%Creset %s%C(red)%d%Creset
