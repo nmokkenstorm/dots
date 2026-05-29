@@ -808,7 +808,8 @@ require('lazy').setup({
       -- Load the colorscheme here.
       -- Like many other themes, this one has different styles, and you could load
       -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-      vim.cmd.colorscheme 'tokyonight-night'
+      -- Disabled in favour of rose-pine (see below)
+      -- vim.cmd.colorscheme 'tokyonight-night'
 
       -- You can configure highlights by doing something like:
       vim.cmd.hi 'Comment gui=none'
@@ -820,7 +821,8 @@ require('lazy').setup({
     name = 'catppuccin',
     priority = 9001,
     init = function()
-      vim.cmd.colorscheme 'catppuccin'
+      -- Disabled in favour of rose-pine (see below)
+      -- vim.cmd.colorscheme 'catppuccin'
     end,
     opts = {
       flavour = 'mocha', -- latte, frappe, macchiato, mocha (darkest)
@@ -842,7 +844,14 @@ require('lazy').setup({
   {
     'rose-pine/neovim',
     name = 'rose-pine',
+    priority = 9002, -- load after tokyonight/catppuccin so rose-pine wins
     config = function()
+      require('rose-pine').setup {
+        variant = 'main', -- auto, main, moon, or dawn
+        styles = {
+          transparency = true,
+        },
+      }
       vim.cmd 'colorscheme rose-pine'
     end,
   },
