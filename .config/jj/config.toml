@@ -1,0 +1,12 @@
+[user]
+name = "Niels Mokkenstorm"
+email = "niels@mokkenstorm.dev"
+
+[ui]
+# needs a DiffEditor provider in nvim (e.g. hunk.nvim) before this works
+# diff-editor = ["nvim", "-c", "DiffEditor $left $right $output"]
+
+[[--scope]]
+--when.repositories = ["~/Developer/skalar"]
+[--scope.user]
+email = "mokkenstorm.n@skalar.com"
