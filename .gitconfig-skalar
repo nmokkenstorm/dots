@@ -1,2 +1,5 @@
 [user]
 	email = mokkenstorm.n@skalar.com
+	signingkey = 1C0ECB076E978878769CB12D740BC0F52900C5E4
+[gpg]
+	format = openpgp

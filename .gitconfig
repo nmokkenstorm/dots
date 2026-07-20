@@ -1,26 +1,35 @@
 [user]
 	name = Niels Mokkenstorm
 	email = niels@mokkenstorm.dev
+	signingkey = 9048D9E07F5F887F
 
 [includeIf "gitdir:~/Developer/riotbyte/"]
 	path = ~/.gitconfig-riotbyte
 
 [includeIf "gitdir:~/Developer/skalar/"]
 	path = ~/.gitconfig-skalar
+
+[includeIf "gitdir:~/Developer/mokkenstorm-dev/"]
+	path = ~/.gitconfig-personal
+
+[includeIf "gitdir:~/Developer/personal/"]
+	path = ~/.gitconfig-personal
 [core]
 	excludesfile = /Users/niels/.globalgitignore
 [pull]
-	rebase = false
+	rebase = true
 [rebase]
 	instructionFormat = (%an <%ae>) %s
+	autoStash = true
 [init]
 	defaultBranch = main
 [push]
 	autoSetupRemote = true
 [alias]
 	tree = log --oneline --decorate --all --graph
+	yolo = ! git add . && git commit --amend --no-edit && git push --force-with-lease
 [commit]
-	gpgsign = false
+	gpgsign = true
 [tag]
 	gpgsign = false
 
@@ -47,3 +56,10 @@
 	date = format:%Y-%m-%d %H:%M
 [format]
 	pretty = %C(yellow)%h%Creset %C(green)%ad%Creset %C(blue)%an <%ae>%Creset %s%C(red)%d%Creset
+[merge]
+	ff = only
+[gpg]
+	format = openpgp
+	program = /opt/homebrew/bin/gpg
+[gpg "ssh"]
+	allowedSignersFile = /Users/niels/.ssh/allowed_signers
