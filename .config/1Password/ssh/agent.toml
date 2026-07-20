@@ -5,3 +5,7 @@ item = "Skalar Bitbucket"
 [[ssh-keys]]
 vault = "Personal"
 item = "Tangled"
+
+[[ssh-keys]]
+vault = "Business"
+item = "DigitalOcean RB"

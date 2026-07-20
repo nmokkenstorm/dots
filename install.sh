@@ -23,7 +23,6 @@ brew install starship btop tmux alacritty bat jq || true
 echo "Installing Fira Code Nerd Font..."
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS via Homebrew
-    brew tap homebrew/cask-fonts
     brew install --cask font-fira-code-nerd-font || true
     echo "✓ Fira Code Nerd Font installed"
 elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
@@ -86,6 +85,7 @@ mkdir -p ~/.config/alacritty
 mkdir -p ~/.config/alacritty/themes
 mkdir -p ~/.config/1Password/ssh
 mkdir -p ~/.config/btop/themes
+mkdir -p ~/.config/jj
 mkdir -p ~/.claude
 
 # Clone alacritty themes if not already present
@@ -110,10 +110,12 @@ ln -sf "$root/.config/alacritty/rose-pine.toml" ~/.config/alacritty/rose-pine.to
 ln -sf "$root/.config/1Password/ssh/agent.toml" ~/.config/1Password/ssh/agent.toml
 ln -sf "$root/.config/nvim" ~/.config/nvim
 ln -sf "$root/.config/starship.toml" ~/.config/starship.toml
+ln -sf "$root/.config/jj/config.toml" ~/.config/jj/config.toml
 ln -sf "$root/.config/btop/themes/catppuccin_mocha.theme" ~/.config/btop/themes/catppuccin_mocha.theme
 ln -sf "$root/.config/btop/themes/rose-pine.theme" ~/.config/btop/themes/rose-pine.theme
 ln -sf "$root/.gitconfig-riotbyte" ~/.gitconfig-riotbyte
 ln -sf "$root/.gitconfig-skalar" ~/.gitconfig-skalar
+ln -sf "$root/.gitconfig-personal" ~/.gitconfig-personal
 ln -sf "$root/.claude/statusline.sh" ~/.claude/statusline.sh
 
 # Configure git

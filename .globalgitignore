@@ -13,3 +13,6 @@
 .claude/
 .agent-shared/
 CLAUDE.md
+
+# Playwright MCP
+.playwright-mcp/
