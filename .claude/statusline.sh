@@ -5,6 +5,7 @@ MODEL=$(echo "$input" | jq -r '.model.display_name')
 DIR=$(echo "$input" | jq -r '.workspace.current_dir')
 PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
 DURATION_MS=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
+PROJECT_DIR=$(echo "$input" | jq -r '.workspace.project_dir // .workspace.current_dir // empty')
 
 CYAN='\033[36m'
 GREEN='\033[32m'
@@ -38,3 +39,14 @@ elif [ "$PCT" -ge 70 ]; then BAR_COLOR="$YELLOW"
 else BAR_COLOR="$GREEN"; fi
 
 printf '%b\n' "${DIM}[${MODEL}]${RESET} ${PROJECT}${GIT_INFO} ${DIM}|${RESET} ${BAR_COLOR}${PCT}%${RESET}"
+
+# Delegate to project-local statusline script if present (avoid self-recursion)
+if [ -n "$PROJECT_DIR" ]; then
+  LOCAL_SCRIPT="${PROJECT_DIR}/.claude/statusline.sh"
+  SELF_REAL=$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")
+  LOCAL_REAL=$(readlink -f "$LOCAL_SCRIPT" 2>/dev/null || echo "$LOCAL_SCRIPT")
+  if [ -x "$LOCAL_SCRIPT" ] && [ "$LOCAL_REAL" != "$SELF_REAL" ]; then
+    PROJECT_LINE=$(echo "$input" | "$LOCAL_SCRIPT" 2>/dev/null)
+    [ -n "$PROJECT_LINE" ] && printf '%b\n' "$PROJECT_LINE"
+  fi
+fi
