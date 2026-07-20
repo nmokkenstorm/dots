@@ -255,3 +255,17 @@ case ":$PATH:" in
   *) export PATH="$PNPM_HOME:$PATH" ;;
 esac
 # pnpm end
+
+# .NET SDK (installed to ~/.dotnet via dotnet-install.sh; the system dotnet at
+# /usr/local/share/dotnet ships only a runtime). Prepend so `dotnet` resolves to
+# the SDK, which the Roslyn LSP (roslyn.nvim) needs at runtime for MSBuild.
+export DOTNET_ROOT="$HOME/.dotnet"
+export DOTNET_CLI_TELEMETRY_OPTOUT=1
+case ":$PATH:" in
+  *":$DOTNET_ROOT:"*) ;;
+  *) export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH" ;;
+esac
+# .NET end
+
+export PATH="/Users/niels/.lando/bin:$PATH"; #landopath
+
