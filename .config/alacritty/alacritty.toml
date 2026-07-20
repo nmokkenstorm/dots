@@ -12,9 +12,17 @@ program = "/bin/zsh"
 [window]
 opacity = 0.80
 
+[[hints.enabled]]
+command = { program = "open" }
+hyperlinks = true
+post_processing = true
+persist = false
+mouse = { enabled = true, mods = "Command" }
+regex = "(ipfs:|ipns:|magnet:|mailto:|gemini:|gopher:|https:|http:|news:|file:|git:|ssh:|ftp:)[^\u0000-\u001F\u007F-\u009F<>\"\\s{-}\\^⟨⟩`]+"
+
 [font]
 normal= { family= "FiraCode Nerd Font Mono", style= "Medium" }
 bold= { family= "FiraCode Nerd Font Mono", style= "Bold" }
 italic= { family= "FiraCode Nerd Font Mono", style= "Retina" }
 bold_italic= { family= "FiraCode Nerd Font Mono", style= "SemiBold" }
-size = 9.5
+size = 10
