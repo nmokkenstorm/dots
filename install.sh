@@ -17,7 +17,7 @@ fi
 
 # Install required tools
 echo "Installing required tools..."
-brew install starship btop tmux alacritty bat jq || true
+brew install starship btop tmux alacritty bat jq macmon || true
 
 # Install Nerd Font
 echo "Installing Fira Code Nerd Font..."
@@ -115,6 +115,9 @@ ln -sf "$root/.config/btop/themes/rose-pine.theme" ~/.config/btop/themes/rose-pi
 ln -sf "$root/.gitconfig-riotbyte" ~/.gitconfig-riotbyte
 ln -sf "$root/.gitconfig-personal" ~/.gitconfig-personal
 ln -sf "$root/.claude/statusline.sh" ~/.claude/statusline.sh
+
+mkdir -p ~/.local/bin
+ln -sf "$root/bin/statmon" ~/.local/bin/statmon
 
 # Configure git
 echo "Configuring git..."

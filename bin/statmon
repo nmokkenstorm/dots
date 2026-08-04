@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# One sampler behind the tmux status line. Status-line #() jobs get killed and
+# respawned by redraw storms and one-shot clients, orphaning their children
+# (macmon, sleep) into a fork pile; this daemon samples on its own clock and
+# the status line only ever cats the result files.
+#
+#   statmon --on      start (no-op while running)
+#   statmon --off     stop
+#   statmon           status
+#
+# Results land in ~/.statmon/{temp,net}.
+
+set -u
+STORE="${STATMON_HOME:-$HOME/.statmon}"
+PIDFILE="$STORE/daemon.pid"
+INTERVAL=15
+TEMP_KILL_AFTER=10
+mkdir -p "$STORE"
+
+running() { [ -s "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
+
+# macmon can hang when its parent context is odd; sample it with a watchdog so
+# at most one attempt is ever in flight.
+sample_temp() {
+  macmon pipe -s1 -i 500 </dev/null 2>/dev/null |
+    jq -r '"\(.temp.cpu_temp_avg | round)°C"' >"$STORE/temp.new" &
+  local sampler=$!
+  ( sleep "$TEMP_KILL_AFTER"; kill -9 "$sampler" 2>/dev/null ) &
+  local watchdog=$!
+  wait "$sampler" 2>/dev/null && [ -s "$STORE/temp.new" ] && mv "$STORE/temp.new" "$STORE/temp"
+  kill "$watchdog" 2>/dev/null
+}
+
+counters() {
+  netstat -ib | awk '$3 ~ /<Link#/ && $1 !~ /^(lo|utun|awdl|llw)/ {rx+=$7; tx+=$10} END {print rx, tx}'
+}
+
+human() {
+  awk -v b="$1" 'BEGIN {
+    split("B/s KiB/s MiB/s GiB/s", u, " "); i = 1
+    while (b >= 1024 && i < 4) { b /= 1024; i++ }
+    printf (i == 1 ? "%d%s" : "%.1f%s"), b, u[i]
+  }'
+}
+
+sample_net() {
+  local now rx tx prev rx0 tx0 t0 dt
+  now=$(date +%s)
+  read -r rx tx < <(counters)
+  prev=$(cat "$STORE/net.raw" 2>/dev/null || echo "")
+  printf '%s %s %s' "$now" "$rx" "$tx" >"$STORE/net.raw"
+  [ -z "$prev" ] && return 0
+  read -r t0 rx0 tx0 <<<"$prev"
+  dt=$(( now - t0 ))
+  [ "$dt" -lt 1 ] && return 0
+  printf '↓%s ↑%s' "$(human $(( (rx - rx0) / dt )))" "$(human $(( (tx - tx0) / dt )))" >"$STORE/net"
+}
+
+case "${1:-}" in
+  --on)
+    running && exit 0
+    (
+      trap 'rm -f "$PIDFILE"' EXIT
+      while tmux has-session 2>/dev/null; do
+        sample_temp
+        sample_net
+        sleep "$INTERVAL"
+      done
+    ) >/dev/null 2>&1 &
+    echo $! >"$PIDFILE"
+    exit 0 ;;
+  --off)
+    running && kill "$(cat "$PIDFILE")" 2>/dev/null
+    rm -f "$PIDFILE"
+    exit 0 ;;
+  *)
+    running && echo "running (pid $(cat "$PIDFILE"))" || echo "off"
+    exit 0 ;;
+esac
