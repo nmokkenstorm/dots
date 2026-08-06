@@ -230,12 +230,20 @@ def run_step(command: str) -> tuple[int, str]:
     proc = subprocess.Popen(
         ["bash", "-c", command],
         stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        start_new_session=True,
     )
     tail: deque[str] = deque(maxlen=10)
     assert proc.stderr is not None
-    for line in proc.stderr:
-        sys.stderr.write(line)
-        tail.append(line)
+    try:
+        for line in proc.stderr:
+            sys.stderr.write(line)
+            tail.append(line)
+    except BaseException:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        raise
     return proc.wait(), clean("".join(tail)[-500:])
 
 
