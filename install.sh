@@ -17,7 +17,7 @@ fi
 
 # Install required tools
 echo "Installing required tools..."
-brew install starship btop tmux alacritty bat jq macmon || true
+brew install starship btop tmux alacritty bat jq macmon python glab || true
 
 # Install Nerd Font
 echo "Installing Fira Code Nerd Font..."
@@ -120,6 +120,8 @@ ln -sf "$root/.claude/statusline.sh" ~/.claude/statusline.sh
 
 mkdir -p ~/.local/bin
 ln -sf "$root/bin/statmon" ~/.local/bin/statmon
+ln -sf "$root/bin/train" ~/.local/bin/train
+ln -sf "$root/bin/glab-merge" ~/.local/bin/glab-merge
 
 # Configure git
 echo "Configuring git..."

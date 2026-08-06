@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# glab-merge: wait until a GitLab merge request is mergeable, then merge it.
+#
+# usage: glab-merge <project-path> <iid>       (e.g. glab-merge web/vsm-werkbonnen 685)
+# Exit 0 merged (or already merged), 75 blocked on something a human must
+# resolve (train marks the step needs-user), 1 on error or timeout.
+# GLAB_MERGE_TIMEOUT overrides the wait budget in seconds (default 600).
+set -uo pipefail
+
+project="${1:?usage: glab-merge <project> <iid>}"
+iid="${2:?usage: glab-merge <project> <iid>}"
+timeout="${GLAB_MERGE_TIMEOUT:-600}"
+enc="${project//\//%2F}"
+
+while [ "$SECONDS" -lt "$timeout" ]; do
+  mr="$(glab api "projects/$enc/merge_requests/$iid")" || exit 1
+  [ "$(jq -r .state <<<"$mr")" = merged ] && {
+    echo "!$iid already merged"
+    exit 0
+  }
+  ms="$(jq -r .detailed_merge_status <<<"$mr")"
+  case "$ms" in
+    mergeable)
+      out="$(glab api --method PUT "projects/$enc/merge_requests/$iid/merge" \
+        --raw-field should_remove_source_branch=true)" || {
+        echo "merge of !$iid rejected" >&2
+        exit 1
+      }
+      echo "!$iid merged ($(jq -r '.merge_commit_sha[:8]' <<<"$out"))"
+      exit 0
+      ;;
+    checking | unchecked | preparing | ci_still_running | ci_must_pass | approvals_syncing)
+      sleep 5
+      ;;
+    need_rebase | conflict | discussions_not_resolved | not_approved | blocked_status | \
+      policies_denied | draft_status | requested_changes | jira_association_missing | \
+      security_policy_violations)
+      echo "!$iid blocked: $ms" >&2
+      exit 75
+      ;;
+    *)
+      echo "!$iid not mergeable: $ms" >&2
+      exit 1
+      ;;
+  esac
+done
+echo "!$iid timed out after ${timeout}s waiting to become mergeable" >&2
+exit 1
