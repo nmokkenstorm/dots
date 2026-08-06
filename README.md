@@ -32,9 +32,13 @@ rerun after adding a tool or config.
   `--whispers [prefix]` flag splits the screen 50/50 with a live reeds feed
   (default prefix `train`, stacked instead of side-by-side on narrow
   windows). In tmux, `prefix+M` pops up that split view, which shows every
-  incomplete train as its own section (falling back to the latest train when
-  all are done, idling when there are none) and closes itself when the shown
-  trains complete on its watch; `q` or `Esc` dismisses it. A popup swallows all
+  attended incomplete train as its own section (falling back to the latest
+  train when all are done, idling when there are none) and closes itself when
+  the shown trains complete on its watch; `q` or `Esc` dismisses it. Attended
+  means: a fresh runner heartbeat (`train run` touches one every 15s), or
+  marks within 4h, stretched to 24h while a step waits on a human. A section
+  whose live step has a stale heartbeat shows "runner heartbeat lost". A
+  popup swallows all
   keys including the tmux prefix, so if one ever refuses to die, run
   `tmux display-popup -C` from any other terminal to close it.
 - `glab-merge <project> <iid>`: waits for a GitLab MR to become mergeable,
