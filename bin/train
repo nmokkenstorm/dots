@@ -3,18 +3,31 @@
 
 A train is a directory under ~/.local/state/train/<id>/ (TRAIN_ROOT overrides):
 
-    plan     key|label|command   one step per line, line order = run order
-    state    key|status|detail   status: pending|live|done|fail|needs-user|skipped
-    title    one-line header for the watcher
-    summary  one-liner ("<id> 7/11 [live] <label>") for status bars
+    plan       key|label|command   one step per line, line order = run order
+    state      key|status|detail   status: pending|live|done|fail|needs-user|skipped
+    title      one-line header for the watcher
+    summary    one-liner ("<id> 7/11 [live] <label>") for status bars
+    heartbeat  touched every 15s while `train run` is alive
 
-Step commands run via bash. Exit 0 marks the step done, 75 (EX_TEMPFAIL) hands
-it to a human (needs-user), anything else fails and stops the train. Rerunning
-`train run` skips done/skipped steps, so a fixed train resumes where it stopped.
+Step commands run via bash in their own process group. Exit 0 marks the step
+done, 75 (EX_TEMPFAIL) hands it to a human (needs-user), anything else fails
+and stops the train; an interrupted runner marks the step fail and kills the
+group. Rerunning `train run` skips done/skipped steps, so a fixed train
+resumes where it stopped. External sessions may drive a train with
+`train mark` alone; such steps carry `exit 75` placeholder commands. Marks
+are flock-serialized, so concurrent markers are safe.
 
-Marks are mirrored to reeds on topic train.<id>.<key> (kind status/done/
-needs-user) and a completed run publishes done on train.<id>; best-effort,
-suppressed by TRAIN_NO_REEDS=1. The watcher exits 0 only on completion, so
+Marks mirror to reeds on topic train.<id>.<key> (kind status/done/needs-user)
+and a completed run publishes done on train.<id>; best-effort, suppressed by
+TRAIN_NO_REEDS=1.
+
+The watcher shows every attended incomplete train as a section: attended
+means a fresh heartbeat, or marks within 4h (24h while needs-user). It falls
+back to the latest train when all are done, idles when there are none, and
+flags live steps whose heartbeat went stale. needs-user steps get numbered
+badges: digit selects, `d` marks done, `s` skips, Esc cancels. `--whispers
+[prefix]` adds a reeds feed pane polled on a background thread. The watcher
+exits 0 only when the shown trains complete on its watch, so
 `tmux display-popup -E "train watch"` auto-dismisses when the train arrives.
 
 Requires python3 >= 3.11.
@@ -43,6 +56,7 @@ Put = Callable[[int, int, str, int], None]
 
 class ParseError(Exception):
     pass
+
 
 ROOT = Path(os.environ.get("TRAIN_ROOT", Path.home() / ".local/state/train"))
 EX_TEMPFAIL = 75
@@ -195,10 +209,7 @@ class Train:
 
 
 def latest_train() -> Train | None:
-    candidates = [d for d in ROOT.iterdir() if d.is_dir()] if ROOT.is_dir() else []
-    if not candidates:
-        return None
-    return Train(max(candidates, key=lambda d: d.stat().st_mtime).name)
+    return next(iter(all_trains()), None)
 
 
 def resolve(id: str | None) -> Train:
@@ -628,7 +639,11 @@ def main() -> int:
     p_mark.add_argument("key")
     p_mark.add_argument("status", choices=[str(s) for s in Status])
     p_mark.add_argument("detail", nargs="?", default="")
-    p_watch = sub.add_parser("watch", help="curses table; exits 0 on completion, q quits")
+    p_watch = sub.add_parser(
+        "watch",
+        help="curses dashboard; digits+d/s act on waiting steps, q quits, "
+             "exits 0 when watched trains complete",
+    )
     p_watch.add_argument("id", nargs="?")
     p_watch.add_argument(
         "--interval", type=float,
