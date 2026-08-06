@@ -423,7 +423,11 @@ def draw_idle(put: Put, interval: float) -> None:
     put(4, 0, "q or Esc to quit", curses.A_DIM)
 
 
-def draw_section(put: Put, y: int, view: View, palette: dict[str, int]) -> int:
+Badge = tuple[str, str]
+
+
+def draw_section(put: Put, y: int, view: View, palette: dict[str, int],
+                 badges: dict[Badge, int], selected: Badge | None) -> int:
     title = f"{view.train.title} ({view.train.id})"
     put(y, 0, "-- ", curses.A_DIM)
     put(y, 3, title, curses.A_BOLD)
@@ -434,10 +438,15 @@ def draw_section(put: Put, y: int, view: View, palette: dict[str, int]) -> int:
         return y + 1
     for step, mark in zip(view.steps, view.marks):
         tag, color, label_attr = ROW_STYLE[mark.status]
+        key: Badge = (view.train.id, step.key)
+        number = badges.get(key)
+        label = f"[{number}] {step.label}" if number else step.label
+        if key == selected:
+            label_attr = curses.A_REVERSE
         put(y, 0, tag, palette[color])
-        put(y, 9, step.label, label_attr)
+        put(y, 9, label, label_attr)
         if mark.detail:
-            put(y, 9 + len(step.label) + 2, f"({mark.detail})", curses.A_DIM)
+            put(y, 9 + len(label) + 2, f"({mark.detail})", curses.A_DIM)
         y += 1
     counts = {s: sum(m.status is s for m in view.marks) for s in Status}
     if view.runner_gone:
@@ -514,6 +523,7 @@ def watch_loop(scr: "curses.window", fixed_id: str | None, interval: float,
     # one of them completed on our watch; already-complete trains, or no
     # trains at all, stay on screen.
     prev: dict[str, bool] = {}
+    selected: Badge | None = None
     while True:
         if fixed_id:
             views = [v for v in [load_view(Train(fixed_id))] if v]
@@ -522,8 +532,14 @@ def watch_loop(scr: "curses.window", fixed_id: str | None, interval: float,
             now = time.time()
             active = [v for v in views if not v.complete and attended(v, now)]
             views = active or views[:1]
+        waiting = [(v.train, s) for v in views
+                   for s, m in zip(v.steps, v.marks)
+                   if m.status is Status.NEEDS_USER][:9]
+        badges = {(t.id, s.key): i + 1 for i, (t, s) in enumerate(waiting)}
+        if selected not in badges:
+            selected = None
 
-        def draw_trains(put: Put) -> None:
+        def draw_trains(put: Put, height: int) -> None:
             if not views:
                 draw_idle(put, interval)
                 return
@@ -533,21 +549,28 @@ def watch_loop(scr: "curses.window", fixed_id: str | None, interval: float,
                 f"refresh {interval:g}s   {time.strftime('%H:%M:%S')}", 0)
             y = 2
             for view in views:
-                y = draw_section(put, y, view, palette) + 1
+                y = draw_section(put, y, view, palette, badges, selected) + 1
+            hint = (
+                "[d]one  [s]kip  [esc] cancel" if selected
+                else f"[1-{len(waiting)}] select waiting step" if waiting
+                else None
+            )
+            if hint:
+                put(height - 1, 0, hint, curses.A_DIM)
 
         scr.erase()
         h, w = scr.getmaxyx()
         if feed is None:
-            draw_trains(region(scr, 0, 0, h, w))
+            draw_trains(region(scr, 0, 0, h, w), h)
         elif w >= 100:
             half = w // 2
-            draw_trains(region(scr, 0, 0, h, half - 2))
+            draw_trains(region(scr, 0, 0, h, half - 2), h)
             for y in range(h):
                 region(scr, y, half - 1, 1, 1)(0, 0, "|", curses.A_DIM)
             draw_whispers(region(scr, 0, half + 1, h, w - half - 1), feed, palette, h)
         else:
             half = h // 2
-            draw_trains(region(scr, 0, 0, half, w))
+            draw_trains(region(scr, 0, 0, half, w), half)
             draw_whispers(region(scr, half, 0, h - half, w), feed, palette, h - half)
         scr.refresh()
 
@@ -563,8 +586,23 @@ def watch_loop(scr: "curses.window", fixed_id: str | None, interval: float,
             curses.napms(1500)
             return 0
         prev = {v.train.id: v.complete for v in views}
-        if scr.getch() in quit_keys:
+
+        ch = scr.getch()
+        if ch == 27 and selected:
+            selected = None
+        elif ch in quit_keys:
             return 0 if all_complete else 1
+        elif ord("1") <= ch <= ord("9") and ch - ord("1") < len(waiting):
+            t, s = waiting[ch - ord("1")]
+            selected = (t.id, s.key)
+        elif ch in (ord("d"), ord("s")) and selected:
+            tid, key = selected
+            status = Status.DONE if ch == ord("d") else Status.SKIPPED
+            try:
+                Train(tid).mark(key, status, "via watch")
+            except (SystemExit, ParseError, FileNotFoundError):
+                pass
+            selected = None
 
 
 def cmd_ls() -> None:
