@@ -17,6 +17,8 @@ rerun after adding a tool or config.
 
 - `statmon`: sampler daemon behind the tmux status bar. It writes files under
   `~/.statmon/` and the bar cats them; samplers are never forked from `#()`.
+- `throb`: rainbow throbber for the tmux status bar with room for a passing
+  thought (`throb -t "..."`); `prefix+T` toggles it, log in `~/.throb/`.
 - `train`: merge/release train runner and curses watcher (python3 >= 3.11).
   A train is a plan of `key|label|command` steps stored under
   `~/.local/state/train/<id>/`. Step exit 0 marks it done, 75 hands it to a

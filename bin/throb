@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# A rainbow throbber for the tmux status bar, with room for a passing thought.
+#
+#   throb -t "..."   append a thought
+#   throb --on       start it   (--off, --toggle)
+#   throb --next     advance the rotation, fired by the tmux focus hook
+#   throb --mount    give the throbber its own centred chunk of the status line
+#   throb --pane     tall-strip version, for a narrow pane
+#
+# Frames go into the @throb_line option and are drawn with refresh-client -S,
+# which repaints the bar without re-running the #() commands sharing it.
+# Where the frame lands is tmux's problem, not ours: --mount parks it in a
+# centre-aligned chunk, which tmux recentres in whatever gap the window list
+# and the right column leave, per client, on every redraw.
+
+set -uo pipefail
+STORE="${THROB_HOME:-$HOME/.throb}"
+LOG="$STORE/thoughts"
+PIDFILE="$STORE/daemon.pid"
+SEQ="$STORE/seq"
+mkdir -p "$STORE"; touch "$LOG"
+
+FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+HUES=(196 202 208 220 190 46 51 33 21 93 201 198)
+WAVE='~-=≈=-~'
+FADE_AFTER=1800    # a thought older than 30m stops showing
+ROTATE_EVERY=40    # frames per thought (40 * 0.2s = 8s)
+WAVE_WIDTH=14
+THOUGHT_MAX=72
+
+# Newest first, stopping at the first one past the fade window.
+recent_thoughts() {
+  local now when what
+  now=$(date +%s)
+  while IFS=$'\t' read -r when what; do
+    [ -z "${what:-}" ] && continue
+    [ $(( now - when )) -gt "$FADE_AFTER" ] && break
+    printf '%s\n' "$what"
+  done < <(tail -r "$LOG" 2>/dev/null || tac "$LOG")
+}
+
+current_thought() {
+  local step=$1 pool n seq what
+  mapfile -t pool < <(recent_thoughts)
+  n=${#pool[@]}
+  [ "$n" -eq 0 ] && return
+  seq=$(cat "$SEQ" 2>/dev/null || echo 0)
+  what="${pool[$(( (step / ROTATE_EVERY + seq) % n ))]}"
+  [ ${#what} -gt $THOUGHT_MAX ] && what="${what:0:$((THOUGHT_MAX - 1))}…"
+  printf '%s' "$what"
+}
+
+render() {
+  local step=$1 thought=$2
+  local spin="${FRAMES[$(( step % 10 ))]}" hue="colour${HUES[$(( step % 12 ))]}"
+
+  # Wave or thought, never both.
+  if [ -n "$thought" ]; then
+    printf '#[fg=%s]%s #[fg=colour245]%s #[fg=%s]%s' "$hue" "$spin" "$thought" "$hue" "$spin"
+  else
+    local out='' i
+    for (( i = 0; i < WAVE_WIDTH; i++ )); do
+      out+="#[fg=colour${HUES[$(( (i + step) % 12 ))]}]${WAVE:$(( (i + step) % 7 )):1}"
+    done
+    printf '#[fg=%s]%s %s #[fg=%s]%s' "$hue" "$spin" "$out" "$hue" "$spin"
+  fi
+}
+
+running() { [ -s "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
+
+case "${1:-}" in
+  -t)
+    printf '%s\t%s\n' "$(date +%s)" "${2:?nothing to say}" >>"$LOG"
+    exit 0 ;;
+
+  --next)
+    printf '%s' "$(( $(cat "$SEQ" 2>/dev/null || echo 0) + 1 ))" >"$SEQ"
+    exit 0 ;;
+
+  --mount)
+    # Splice into whatever status-format is current rather than pasting a copy
+    # of tmux's default, which would silently pin us to one tmux version.
+    fmt=$(tmux show -gv 'status-format[0]' 2>/dev/null)
+    case "$fmt" in *'@throb_line'*) exit 0 ;; esac
+    # Split rather than ${fmt/.../}: a replacement pattern opening with '#'
+    # parses as the prefix-anchored form and silently eats the '#'.
+    marker='#[nolist align=right'
+    head=${fmt%%"$marker"*}
+    [ "$head" = "$fmt" ] && exit 0
+    tmux set -g 'status-format[0]' \
+      "$head#[nolist align=centre default]#{@throb_line}${fmt#"$head"}"
+    exit 0 ;;
+
+  --off)
+    running && kill "$(cat "$PIDFILE")" 2>/dev/null
+    rm -f "$PIDFILE"
+    tmux set -g @throb_line '' 2>/dev/null
+    tmux refresh-client -S 2>/dev/null
+    exit 0 ;;
+
+  --toggle)
+    running && exec "$0" --off || exec "$0" --on ;;
+
+  --on)
+    running && exit 0
+    (
+      trap 'tmux set -g @throb_line "" 2>/dev/null; rm -f "$PIDFILE"' EXIT
+      step=0
+      while tmux has-session 2>/dev/null; do
+        thought=$(current_thought "$step")
+        tmux set -g @throb_line "$(render "$step" "$thought")" 2>/dev/null || break
+        # refresh-client needs a named client: this loop has none of its own.
+        tmux list-clients -F '#{client_name}' 2>/dev/null |
+          while read -r c; do tmux refresh-client -S -t "$c" 2>/dev/null; done
+        step=$(( (step + 1) % 840 ))
+        sleep 0.2
+      done
+    ) >/dev/null 2>&1 &
+    echo $! >"$PIDFILE"
+    exit 0 ;;
+
+  --pane)
+    tput civis; trap 'tput cnorm; tput sgr0; clear' EXIT INT TERM
+    clear; cols=$(tput cols); step=0
+    while :; do
+      tput cup 0 0
+      printf ' %s' "$(render "$step" '' | sed 's/#\[fg=colour\([0-9]*\)\]/\x1b[38;5;\1m/g')"
+      tput el; tput sgr0
+      n=2
+      while IFS=$'\t' read -r when what; do
+        [ $n -ge $(( $(tput lines) - 2 )) ] && break
+        tput cup $n 0; printf '\x1b[38;5;245m%s\x1b[0m' "$(date -r "$when" +%H:%M)"
+        while IFS= read -r line; do
+          n=$(( n + 1 )); tput cup $n 0; printf '  %s' "$line"
+        done < <(printf '%s\n' "$what" | fold -s -w $(( cols - 3 )))
+        n=$(( n + 2 ))
+      done < <(tail -r "$LOG" 2>/dev/null || tac "$LOG")
+      step=$(( step + 1 )); sleep 0.12
+    done ;;
+
+  *)
+    printf 'usage: throb -t "thought" | --on | --off | --toggle | --next | --mount | --pane\n'
+    running && echo "status: running (pid $(cat "$PIDFILE"))" || echo "status: off"
+    exit 0 ;;
+esac
