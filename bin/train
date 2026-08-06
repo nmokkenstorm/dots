@@ -1,0 +1,563 @@
+#!/usr/bin/env python3
+"""train: run and watch multi-step merge/release trains.
+
+A train is a directory under ~/.local/state/train/<id>/ (TRAIN_ROOT overrides):
+
+    plan     key|label|command   one step per line, line order = run order
+    state    key|status|detail   status: pending|live|done|fail|needs-user|skipped
+    title    one-line header for the watcher
+    summary  one-liner ("<id> 7/11 [live] <label>") for status bars
+
+Step commands run via bash. Exit 0 marks the step done, 75 (EX_TEMPFAIL) hands
+it to a human (needs-user), anything else fails and stops the train. Rerunning
+`train run` skips done/skipped steps, so a fixed train resumes where it stopped.
+
+Marks are mirrored to reeds on topic train.<id>.<key> (kind status/done/
+needs-user) and a completed run publishes done on train.<id>; best-effort,
+suppressed by TRAIN_NO_REEDS=1. The watcher exits 0 only on completion, so
+`tmux display-popup -E "train watch"` auto-dismisses when the train arrives.
+
+Requires python3 >= 3.11.
+"""
+
+import curses
+import fcntl
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from collections import deque
+from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
+from typing import Callable, NoReturn
+
+Put = Callable[[int, int, str, int], None]
+
+
+class ParseError(Exception):
+    pass
+
+ROOT = Path(os.environ.get("TRAIN_ROOT", Path.home() / ".local/state/train"))
+EX_TEMPFAIL = 75
+
+
+class Status(StrEnum):
+    PENDING = "pending"
+    LIVE = "live"
+    DONE = "done"
+    FAIL = "fail"
+    NEEDS_USER = "needs-user"
+    SKIPPED = "skipped"
+
+
+FINISHED = {Status.DONE, Status.SKIPPED}
+STATUS_VALUES = {s.value for s in Status}
+REEDS_KIND = {Status.DONE: "done", Status.NEEDS_USER: "needs-user"}
+WATCH_FRESH_SECS = 24 * 3600
+
+
+@dataclass(frozen=True)
+class Step:
+    key: str
+    label: str
+    command: str
+
+
+@dataclass(frozen=True)
+class Mark:
+    status: Status
+    detail: str
+
+
+def die(msg: str) -> NoReturn:
+    print(f"train: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def clean(text: str, limit: int = 200) -> str:
+    return " ".join(text.split()).replace("|", " ")[:limit]
+
+
+def parse_plan_text(text: str, source: str) -> list[Step]:
+    steps = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            raise ParseError(f"{source}:{n}: expected key|label|command, got: {line}")
+        steps.append(Step(*(p.strip() for p in parts[:2]), parts[2]))
+    if len({s.key for s in steps}) != len(steps):
+        raise ParseError(f"{source}: duplicate step keys")
+    return steps
+
+
+def parse_plan(path: Path) -> list[Step]:
+    return parse_plan_text(path.read_text(), str(path))
+
+
+def parse_state(path: Path) -> dict[str, Mark]:
+    state = {}
+    for n, line in enumerate(path.read_text().splitlines(), 1):
+        parts = line.split("|", 2)
+        if len(parts) != 3 or parts[1] not in STATUS_VALUES:
+            raise ParseError(f"{path}:{n}: expected key|status|detail, got: {line}")
+        state[parts[0]] = Mark(Status(parts[1]), parts[2])
+    return state
+
+
+def atomic_write(path: Path, content: str) -> None:
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    with os.fdopen(fd, "w") as f:
+        f.write(content)
+    os.replace(tmp, path)
+
+
+@dataclass(frozen=True)
+class Train:
+    id: str
+
+    @property
+    def dir(self) -> Path:
+        return ROOT / self.id
+
+    @property
+    def title(self) -> str:
+        return (self.dir / "title").read_text().strip()
+
+    def steps(self) -> list[Step]:
+        return parse_plan(self.dir / "plan")
+
+    def state(self) -> dict[str, Mark]:
+        return parse_state(self.dir / "state")
+
+    def mark(self, key: str, status: Status, detail: str = "") -> None:
+        # flock serializes concurrent markers (train run + an external session)
+        with open(self.dir / "lock", "w") as lockf:
+            fcntl.flock(lockf, fcntl.LOCK_EX)
+            state = self.state()
+            if key not in state:
+                die(f"unknown step: {key}")
+            state[key] = Mark(status, clean(detail))
+            atomic_write(
+                self.dir / "state",
+                "".join(f"{k}|{m.status}|{m.detail}\n" for k, m in state.items()),
+            )
+            self.write_summary(state)
+        self.whisper(key, state[key])
+
+    def write_summary(self, state: dict[str, Mark]) -> None:
+        done = sum(m.status in FINISHED for m in state.values())
+        current = next(
+            (k for k, m in state.items() if m.status not in FINISHED | {Status.PENDING}),
+            None,
+        )
+        marker = {
+            Status.LIVE: "[live]",
+            Status.FAIL: "[FAIL]",
+            Status.NEEDS_USER: "[user]",
+        }.get(state[current].status, "") if current else ""
+        if state and done == len(state):
+            marker, current = "[done]", None
+        labels = {s.key: s.label for s in self.steps()}
+        label = labels.get(current, "") if current else ""
+        line = f"{self.id} {done}/{len(state)} {marker or '[....]'} {label}".rstrip()
+        atomic_write(self.dir / "summary", line + "\n")
+
+    def whisper(self, key: str, mark: Mark) -> None:
+        labels = {s.key: s.label for s in self.steps()}
+        body = {"status": str(mark.status), "label": labels.get(key, "")}
+        if mark.detail:
+            body["detail"] = mark.detail
+        self.publish(f"train.{self.id}.{key}", body, REEDS_KIND.get(mark.status, "status"))
+
+    def publish(self, topic: str, body: dict, kind: str) -> None:
+        if os.environ.get("TRAIN_NO_REEDS"):
+            return
+        env = {**os.environ, "REEDS_SENDER": os.environ.get("REEDS_SENDER", "train")}
+        try:
+            subprocess.run(
+                ["reeds", "pub", topic, json.dumps(body), kind],
+                env=env, capture_output=True, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+
+def latest_train() -> Train | None:
+    candidates = [d for d in ROOT.iterdir() if d.is_dir()] if ROOT.is_dir() else []
+    if not candidates:
+        return None
+    return Train(max(candidates, key=lambda d: d.stat().st_mtime).name)
+
+
+def resolve(id: str | None) -> Train:
+    if id is None:
+        train = latest_train()
+        if train is None:
+            die("no trains yet")
+        return train
+    if not (ROOT / id).is_dir():
+        die(f"unknown train: {id}")
+    return Train(id)
+
+
+def cmd_new(id: str, title: str) -> None:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", id):
+        die("id must be kebab-case (it becomes a reeds topic segment)")
+    train = Train(id)
+    if (train.dir / "plan").exists():
+        die(f"train {id} already exists")
+    text = "" if sys.stdin.isatty() else sys.stdin.read()
+    steps = parse_plan_text(text, "<stdin>")
+    train.dir.mkdir(parents=True, exist_ok=True)
+    (train.dir / "title").write_text((title or id) + "\n")
+    (train.dir / "plan").write_text(text)
+    atomic_write(train.dir / "state", "".join(f"{s.key}|pending|\n" for s in steps))
+    train.write_summary(train.state())
+    if not steps:
+        print(f"created {id}; add steps to {train.dir / 'plan'} (key|label|command)")
+
+
+def run_step(command: str) -> tuple[int, str]:
+    """Run a step, streaming stderr through while keeping a tail for detail."""
+    proc = subprocess.Popen(
+        ["bash", "-c", command],
+        stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+    )
+    tail: deque[str] = deque(maxlen=10)
+    assert proc.stderr is not None
+    for line in proc.stderr:
+        sys.stderr.write(line)
+        tail.append(line)
+    return proc.wait(), clean("".join(tail)[-500:])
+
+
+def cmd_run(id: str | None) -> int:
+    train = resolve(id)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    for step in train.steps():
+        current = train.state().get(step.key)
+        if current is None:
+            die(f"step {step.key} is in the plan but not in state; was the plan edited?")
+        if current.status in FINISHED:
+            continue
+        train.mark(step.key, Status.LIVE)
+        try:
+            returncode, detail = run_step(step.command)
+        except BaseException:
+            train.mark(step.key, Status.FAIL, "interrupted")
+            raise
+        if returncode == 0:
+            train.mark(step.key, Status.DONE)
+        elif returncode == EX_TEMPFAIL:
+            train.mark(step.key, Status.NEEDS_USER, detail)
+            suffix = f" ({detail})" if detail else ""
+            print(f"train {train.id}: step {step.key} handed to a human{suffix}")
+            return EX_TEMPFAIL
+        else:
+            train.mark(step.key, Status.FAIL, detail)
+            print(
+                f"train {train.id}: step {step.key} failed (exit {returncode})",
+                file=sys.stderr,
+            )
+            return returncode
+    train.publish(
+        f"train.{train.id}",
+        {"title": train.title, "steps": len(train.steps())},
+        "done",
+    )
+    print(f"train {train.id}: all steps done, party over")
+    return 0
+
+
+ROW_STYLE = {
+    Status.DONE: ("[done]", "green", 0),
+    Status.LIVE: ("[live]", "yellow", curses.A_BOLD),
+    Status.FAIL: ("[FAIL]", "red", 0),
+    Status.NEEDS_USER: ("[user]", "cyan", 0),
+    Status.SKIPPED: ("[skip]", "dim", curses.A_DIM),
+    Status.PENDING: ("[....]", "dim", curses.A_DIM),
+}
+
+
+class WhisperFeed:
+    """Tail of a reeds topic prefix, polled over the daemon's HTTP API."""
+
+    def __init__(self, prefix: str) -> None:
+        self.prefix = prefix
+        self.cursor = 0
+        self.rows: deque[dict] = deque(maxlen=200)
+        self.state = "init"
+
+    def poll(self) -> None:
+        base = os.environ.get("REEDS_URL", "http://localhost:7333")
+        try:
+            # two pages per tick keeps a cold catch-up from stalling the UI
+            for _ in range(2):
+                url = f"{base}/t/{self.prefix}?since={self.cursor}&limit=500"
+                with urllib.request.urlopen(url, timeout=1) as resp:
+                    page = json.load(resp)
+                self.rows.extend(page["whispers"])
+                self.cursor = page["next_since"]
+                if not page["more"]:
+                    break
+            self.state = "live"
+        except OSError:
+            self.state = "down"
+        except (ValueError, KeyError):
+            self.state = "err"
+
+
+def region(scr: "curses.window", y0: int, x0: int, height: int, width: int) -> Put:
+    def put(y: int, x: int, text: str, attr: int = 0) -> None:
+        h, w = scr.getmaxyx()
+        yy, xx = y0 + y, x0 + x
+        if y >= height or x >= width or yy >= h or xx >= w:
+            return
+        try:
+            scr.addstr(yy, xx, text[: min(width - x, w - xx - 1)], attr)
+        except curses.error:
+            pass
+
+    return put
+
+
+@dataclass(frozen=True)
+class View:
+    train: Train
+    steps: list[Step]
+    marks: list[Mark]
+
+    @property
+    def complete(self) -> bool:
+        return bool(self.steps) and all(m.status in FINISHED for m in self.marks)
+
+
+def load_view(train: Train) -> View | None:
+    try:
+        steps = train.steps()
+        state = train.state()
+    except (FileNotFoundError, ParseError):
+        return None
+    return View(train, steps, [state.get(s.key, Mark(Status.PENDING, "")) for s in steps])
+
+
+def all_trains() -> list[Train]:
+    dirs = [d for d in ROOT.iterdir() if d.is_dir()] if ROOT.is_dir() else []
+    ordered = sorted(dirs, key=lambda d: d.stat().st_mtime, reverse=True)
+    return [Train(d.name) for d in ordered]
+
+
+def draw_idle(put: Put, interval: float) -> None:
+    put(0, 0, "TRAIN", curses.A_BOLD)
+    put(1, 0, f"refresh {interval:g}s   {time.strftime('%H:%M:%S')}", 0)
+    put(3, 0, "no trains yet, waiting", curses.A_DIM)
+    put(4, 0, "q or Esc to quit", curses.A_DIM)
+
+
+def draw_section(put: Put, y: int, view: View, palette: dict[str, int]) -> int:
+    title = f"{view.train.title} ({view.train.id})"
+    put(y, 0, "-- ", curses.A_DIM)
+    put(y, 3, title, curses.A_BOLD)
+    put(y, 4 + len(title), "-" * max(0, 58 - len(title)), curses.A_DIM)
+    y += 1
+    if not view.steps:
+        put(y, 0, "empty plan, waiting", curses.A_DIM)
+        return y + 1
+    for step, mark in zip(view.steps, view.marks):
+        tag, color, label_attr = ROW_STYLE[mark.status]
+        put(y, 0, tag, palette[color])
+        put(y, 9, step.label, label_attr)
+        if mark.detail:
+            put(y, 9 + len(step.label) + 2, f"({mark.detail})", curses.A_DIM)
+        y += 1
+    counts = {s: sum(m.status is s for m in view.marks) for s in Status}
+    if counts[Status.FAIL]:
+        put(y, 0, f"train stalled: {counts[Status.FAIL]} step(s) broken",
+            palette["red"] | curses.A_BOLD)
+        y += 1
+    elif counts[Status.NEEDS_USER]:
+        put(y, 0, f"waiting on a human: {counts[Status.NEEDS_USER]} step(s)",
+            palette["cyan"] | curses.A_BOLD)
+        y += 1
+    elif view.complete:
+        put(y, 0, "all steps done, party over", palette["green"] | curses.A_BOLD)
+        y += 1
+    return y
+
+
+WHISPER_KIND_COLOR = {"done": "green", "needs-user": "cyan", "status": "dim"}
+
+
+def draw_whispers(put: Put, feed: WhisperFeed, palette: dict[str, int],
+                  height: int) -> None:
+    marker, color = {
+        "live": ("[live]", "green"),
+        "down": ("[down]", "red"),
+        "err": ("[err] ", "yellow"),
+    }.get(feed.state, ("[....]", "dim"))
+    put(0, 0, f"REEDS  {feed.prefix}", curses.A_BOLD)
+    put(0, 8 + len(feed.prefix), marker, palette[color])
+    put(1, 0, "-" * 62, 0)
+    visible = list(feed.rows)[-(height - 2):]
+    for i, row in enumerate(visible):
+        stamp = time.strftime("%H:%M:%S", time.localtime(row.get("ts", 0) / 1000))
+        kind = str(row.get("kind", ""))
+        topic = str(row.get("topic", "")).removeprefix(feed.prefix).lstrip(".") or "."
+        body = row.get("body")
+        text = json.dumps(body, separators=(",", ":")) if isinstance(body, dict) else str(body)
+        put(2 + i, 0, stamp, curses.A_DIM)
+        put(2 + i, 9, f"{kind:<11.11}", palette[WHISPER_KIND_COLOR.get(kind, "dim")])
+        put(2 + i, 21, f"{topic:<14.14}", curses.A_BOLD)
+        put(2 + i, 36, text, 0)
+
+
+def cmd_watch(id: str | None, interval: float, whispers: str | None) -> int:
+    if id is not None:
+        resolve(id)
+    return curses.wrapper(watch_loop, id, interval, whispers)
+
+
+def watch_loop(scr: "curses.window", fixed_id: str | None, interval: float,
+               whispers: str | None) -> int:
+    curses.curs_set(0)
+    palette = {"dim": curses.A_DIM, "green": curses.A_BOLD, "yellow": curses.A_BOLD,
+               "red": curses.A_BOLD, "cyan": curses.A_BOLD}
+    try:
+        curses.use_default_colors()
+        for i, (name, color) in enumerate(
+            [("green", curses.COLOR_GREEN), ("yellow", curses.COLOR_YELLOW),
+             ("red", curses.COLOR_RED), ("cyan", curses.COLOR_CYAN)], 1,
+        ):
+            curses.init_pair(i, color, -1)
+            palette[name] = curses.color_pair(i)
+    except curses.error:
+        pass
+    scr.timeout(int(interval * 1000))
+    feed = WhisperFeed(whispers) if whispers else None
+
+    # Auto-close (exit 0) only when every shown train is complete and at least
+    # one of them completed on our watch; already-complete trains, or no
+    # trains at all, stay on screen.
+    prev: dict[str, bool] = {}
+    while True:
+        if fixed_id:
+            views = [v for v in [load_view(Train(fixed_id))] if v]
+        else:
+            views = [v for t in all_trains() if (v := load_view(t))]
+            fresh = time.time() - WATCH_FRESH_SECS
+            active = [v for v in views
+                      if not v.complete and v.train.dir.stat().st_mtime > fresh]
+            views = active or views[:1]
+        if feed:
+            feed.poll()
+
+        def draw_trains(put: Put) -> None:
+            if not views:
+                draw_idle(put, interval)
+                return
+            label = "TRAIN" if len(views) == 1 else f"TRAINS ({len(views)})"
+            put(0, 0, label, curses.A_BOLD)
+            put(0, len(label) + 3,
+                f"refresh {interval:g}s   {time.strftime('%H:%M:%S')}", 0)
+            y = 2
+            for view in views:
+                y = draw_section(put, y, view, palette) + 1
+
+        scr.erase()
+        h, w = scr.getmaxyx()
+        if feed is None:
+            draw_trains(region(scr, 0, 0, h, w))
+        elif w >= 100:
+            half = w // 2
+            draw_trains(region(scr, 0, 0, h, half - 2))
+            for y in range(h):
+                region(scr, y, half - 1, 1, 1)(0, 0, "|", curses.A_DIM)
+            draw_whispers(region(scr, 0, half + 1, h, w - half - 1), feed, palette, h)
+        else:
+            half = h // 2
+            draw_trains(region(scr, 0, 0, half, w))
+            draw_whispers(region(scr, half, 0, h - half, w), feed, palette, h - half)
+        scr.refresh()
+
+        quit_keys = (ord("q"), 27)
+        if not views:
+            prev = {}
+            if scr.getch() in quit_keys:
+                return 1
+            continue
+        all_complete = all(v.complete for v in views)
+        witnessed = any(v.complete and prev.get(v.train.id) is False for v in views)
+        if all_complete and witnessed:
+            curses.napms(1500)
+            return 0
+        prev = {v.train.id: v.complete for v in views}
+        if scr.getch() in quit_keys:
+            return 0 if all_complete else 1
+
+
+def cmd_ls() -> None:
+    trains = [d for d in ROOT.iterdir() if d.is_dir()] if ROOT.is_dir() else []
+    for d in sorted(trains, key=lambda d: d.stat().st_mtime, reverse=True):
+        summary = d / "summary"
+        if summary.exists():
+            print(summary.read_text(), end="")
+
+
+def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="train", description=__doc__.split("\n")[0])
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    p_new = sub.add_parser("new", help="create a train, plan read from stdin")
+    p_new.add_argument("id")
+    p_new.add_argument("title", nargs="*")
+    p_run = sub.add_parser("run", help="run remaining steps, stop on fail/needs-user")
+    p_run.add_argument("id", nargs="?")
+    p_mark = sub.add_parser("mark", help="set one step's status")
+    p_mark.add_argument("id")
+    p_mark.add_argument("key")
+    p_mark.add_argument("status", choices=[str(s) for s in Status])
+    p_mark.add_argument("detail", nargs="?", default="")
+    p_watch = sub.add_parser("watch", help="curses table; exits 0 on completion, q quits")
+    p_watch.add_argument("id", nargs="?")
+    p_watch.add_argument(
+        "--interval", type=float,
+        default=float(os.environ.get("TRAIN_WATCH_INTERVAL", 2)),
+    )
+    p_watch.add_argument(
+        "--whispers", nargs="?", const="train", default=None, metavar="PREFIX",
+        help="50/50 split with a reeds feed for PREFIX (default: train)",
+    )
+    sub.add_parser("ls", help="list trains and progress")
+    sub.add_parser("latest", help="print the most recently touched train id")
+    args = parser.parse_args()
+
+    match args.cmd:
+        case "new":
+            cmd_new(args.id, " ".join(args.title))
+        case "run":
+            return cmd_run(args.id)
+        case "mark":
+            resolve(args.id).mark(args.key, Status(args.status), args.detail)
+        case "watch":
+            return cmd_watch(args.id, args.interval, args.whispers)
+        case "ls":
+            cmd_ls()
+        case "latest":
+            print(resolve(None).id)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except ParseError as e:
+        die(str(e))
