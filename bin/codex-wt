@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# codex-wt: run Codex against one git worktree, sandboxed and non-interactive.
+#
+#   codex-wt <worktree> <brief-file>              start a run
+#   codex-wt <worktree> <brief-file> <thread-id>  steer an existing run
+#
+# Isolation: the worktree plus the repo's common git dir are writable, so the
+# agent can commit; sibling worktrees are unreachable. Pushing is denied by
+# environment rather than by asking: ssh is /usr/bin/false and gh has no config.
+# Sockets stay allowed because tsx/tsc need local IPC to build (network_access
+# false denies unix pipes too, not just the internet).
+set -uo pipefail
+
+worktree=${1:?usage: codex-wt <worktree> <brief-file> [thread-id]}
+brief=${2:?usage: codex-wt <worktree> <brief-file> [thread-id]}
+thread=${3:-}
+
+worktree=$(cd "$worktree" && pwd)
+[[ -r $brief ]] || { echo "codex-wt: unreadable brief: $brief" >&2; exit 2; }
+
+gitdir=$(git -C "$worktree" rev-parse --path-format=absolute --git-common-dir)
+logdir=${CODEX_WT_LOGS:-$HOME/.local/state/codex-wt}
+mkdir -p "$logdir"
+stamp=$(git -C "$worktree" rev-parse --short HEAD)
+log="$logdir/$(basename "$worktree")-$stamp-$$.jsonl"
+
+# Codex's own AGENTS.md mandates plan-then-approval. In a non-interactive run
+# nobody can answer, so it proposes and exits having done nothing. The operator
+# pre-approves implementation scope per run; the boundary it draws still holds
+# and is enforced above by the sandbox, not by this paragraph.
+preamble=$(cat <<'EOF'
+## Run contract (read first)
+
+You are running non-interactively. Nobody can answer a question mid-run, so do
+not propose a plan and stop: plan internally, then implement, verify, and commit
+locally. The operator has pre-approved implementation scope for the task below.
+
+Still forbidden, and enforced by the sandbox rather than trust: pushing, opening
+or editing PRs, touching any branch or worktree other than this one, and editing
+tickets. If you believe the task requires one of those, say so in your final
+message and stop.
+
+Report at the end: what changed, which checks you ran with their real output,
+what you could not verify, and anything you found that is out of scope.
+
+---
+
+EOF
+)
+
+set -- \
+  -c sandbox_mode=workspace-write \
+  -c approval_policy=never \
+  -c model_reasoning_effort=high \
+  -c "sandbox_workspace_write.writable_roots=[\"$gitdir\"]" \
+  -c 'sandbox_workspace_write.network_access=true' \
+  -c 'shell_environment_policy.set={GIT_SSH_COMMAND="/usr/bin/false",GH_TOKEN="",GITHUB_TOKEN="",GH_CONFIG_DIR="/nonexistent-codex-gh"}' \
+  -C "$worktree"
+
+if [[ -n $thread ]]; then
+  printf 'codex-wt: steering %s in %s\n' "$thread" "$worktree" >&2
+  codex "$@" exec resume "$thread" --json "$preamble$(cat "$brief")" </dev/null | tee "$log"
+else
+  printf 'codex-wt: starting in %s (HEAD %s)\n' "$worktree" "$stamp" >&2
+  codex "$@" exec --json "$preamble$(cat "$brief")" </dev/null | tee "$log"
+fi
+
+printf '\ncodex-wt: events %s\n' "$log" >&2
+python3 - "$log" <<'PY' >&2
+import json, sys
+thread, last = None, None
+for line in open(sys.argv[1]):
+    try:
+        event = json.loads(line)
+    except ValueError:
+        continue
+    if event.get("type") == "thread.started":
+        thread = event.get("thread_id")
+    if event.get("type") == "item.completed" and event.get("item", {}).get("type") == "agent_message":
+        last = event["item"].get("text")
+print(f"codex-wt: thread {thread}" if thread else "codex-wt: no thread id in stream")
+if thread:
+    print(f"codex-wt: steer with  codex-wt <worktree> <brief> {thread}")
+PY

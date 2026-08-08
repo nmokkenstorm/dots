@@ -123,6 +123,8 @@ ln -sf "$root/bin/statmon" ~/.local/bin/statmon
 ln -sf "$root/bin/throb" ~/.local/bin/throb
 ln -sf "$root/bin/train" ~/.local/bin/train
 ln -sf "$root/bin/glab-merge" ~/.local/bin/glab-merge
+ln -sf "$root/bin/codex-wt" ~/.local/bin/codex-wt
+ln -sf "$root/bin/codex-watch" ~/.local/bin/codex-watch
 
 # Configure git
 echo "Configuring git..."
