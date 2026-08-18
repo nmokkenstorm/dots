@@ -13,6 +13,55 @@ Installs brew deps, oh-my-zsh, TPM, clones alacritty themes, and symlinks
 configs into place, including `bin/` tools into `~/.local/bin`. Idempotent;
 rerun after adding a tool or config.
 
+## Neovim worktree picker
+
+Press `<leader>gw` inside a Git repository to open the Telescope worktree and
+branch picker. It shows the current and checked-out worktrees, dirty state,
+upstream divergence, branch age, and the latest CI pipeline status. Press
+`<C-r>` in the picker to fetch and refresh Git state.
+
+Pipeline status loads asynchronously and supports GitHub Actions, GitLab CI,
+Bitbucket Pipelines, and public Tangled Spindle pipelines. The picker uses the
+`origin` remote by default. Select another remote per repository with a `.env`
+file at that repository's root:
+
+```dotenv
+WORKTREE_CI_REMOTE=tangled
+```
+
+Provider credentials can be supplied in the same project-level `.env` file:
+
+```dotenv
+# GitHub, either name is accepted
+GH_TOKEN=
+GITHUB_TOKEN=
+
+# GitLab
+GITLAB_TOKEN=
+
+# Bitbucket, use an access token or username with an API token/app password
+BITBUCKET_ACCESS_TOKEN=
+BITBUCKET_USERNAME=
+BITBUCKET_API_TOKEN=
+BITBUCKET_APP_PASSWORD=
+```
+
+GitHub requires an authenticated `gh` CLI, GitLab requires an authenticated
+`glab` CLI, and Bitbucket and Tangled require `curl`. Tangled status currently
+supports public repositories only. Provider queries time out after 10 seconds
+and inspect up to 100 recent runs.
+
+Pipeline states are shown as `✓ passed`, `✗ failed`, `● running`, `○ pending`,
+`- none`, or `? unknown`. The initial `… loading` state is replaced when the
+provider query finishes.
+
+Existing shell environment variables take precedence over `.env`. Only the
+listed variables are loaded, and they are passed to the provider subprocess
+without changing Neovim's global environment. Missing tools, credentials, or
+network access produce an unknown status without blocking the picker. Values
+are read as simple dotenv literals; variable expansion is not supported. Keep
+the project `.env` ignored by Git.
+
 ## Tools (bin/)
 
 - `statmon`: sampler daemon behind the tmux status bar. It writes files under
