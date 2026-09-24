@@ -1,0 +1,52 @@
+# Sourced by bar-<name> modules: one daemon skeleton, one publishing contract.
+#
+# A module defines render() (prints its segment, tmux markup allowed, empty to
+# hide) and INTERVAL, then calls bar_main "$@". The segment lands in the tmux
+# user option @bar_<name>; `bar mount` builds status-format[1] from those, so
+# no #() ever runs on the status line and each module keeps its own clock.
+#
+#   bar-<name> --on | --off | --toggle | render | (status)
+
+set -uo pipefail
+BAR_STORE="${BAR_HOME:-$HOME/.local/state/bar}"
+BAR_NAME="${BAR_MODULE:-${0##*/bar-}}"
+BAR_PIDFILE="$BAR_STORE/$BAR_NAME.pid"
+INTERVAL="${INTERVAL:-15}"
+mkdir -p "$BAR_STORE"
+
+bar_running() { [ -s "$BAR_PIDFILE" ] && kill -0 "$(cat "$BAR_PIDFILE")" 2>/dev/null; }
+
+# refresh-client needs a named client; a daemon has none of its own.
+bar_publish() {
+  tmux set -g "@bar_$BAR_NAME" "$1" 2>/dev/null || return 1
+  tmux list-clients -F '#{client_name}' 2>/dev/null |
+    while read -r c; do tmux refresh-client -S -t "$c" 2>/dev/null; done
+}
+
+bar_on() {
+  bar_running && return 0
+  (
+    trap 'bar_publish ""; rm -f "$BAR_PIDFILE"' EXIT
+    while tmux has-session 2>/dev/null; do
+      bar_publish "$(render)" || break
+      sleep "$INTERVAL"
+    done
+  ) >/dev/null 2>&1 &
+  echo $! >"$BAR_PIDFILE"
+}
+
+bar_off() {
+  bar_running && kill "$(cat "$BAR_PIDFILE")" 2>/dev/null
+  rm -f "$BAR_PIDFILE"
+  bar_publish ""
+}
+
+bar_main() {
+  case "${1:-}" in
+    --on) bar_on ;;
+    --off) bar_off ;;
+    --toggle) bar_running && bar_off || bar_on ;;
+    render) render; echo ;;
+    *) bar_running && echo "$BAR_NAME: running (pid $(cat "$BAR_PIDFILE"))" || echo "$BAR_NAME: off" ;;
+  esac
+}
