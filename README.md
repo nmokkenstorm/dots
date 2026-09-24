@@ -64,6 +64,11 @@ the project `.env` ignored by Git.
 
 ## Tools (bin/)
 
+- `bar`: second tmux status row built from modules. A module publishes its
+  segment into the tmux option `@bar_<name>` (daemons via `bin/bar-lib`, one-shots
+  via `bar set <name> <text>`); `bar mount` builds `status-format[1]` from
+  `~/.config/tmux/bar/modules`, so no `#()` runs on the row. `bar-sys` presents
+  statmon's samples plus cpu and battery.
 - `researchmon`: tracks explicitly selected Codex research threads on the shared
   local app server. `researchmon track <thread-id>` adds a thread; `untrack`
   removes it, and `list` prints tracked IDs. Inside a Codex tool shell, the ID
