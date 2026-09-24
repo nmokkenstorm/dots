@@ -9,3 +9,7 @@ item = "Tangled"
 [[ssh-keys]]
 vault = "Business"
 item = "DigitalOcean RB"
+
+[[ssh-keys]]
+vault = "Employee"
+item = "DPG GitHub"
