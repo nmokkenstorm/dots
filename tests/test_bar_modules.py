@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import time
 import unittest
 from pathlib import Path
 
@@ -39,13 +40,18 @@ class BarPr(unittest.TestCase):
         self.assertEqual(run("bar-pr", ["ai-gateway", "me"], []), "")
 
 
+NOW_MS = int(time.time() * 1000)
+
+
 class BarReeds(unittest.TestCase):
-    def test_counts_needs_user_entries(self):
-        state = {"entries": [{"kind": "needs-user"}, {"kind": "status"}, {"kind": "needs-user"}]}
+    def test_counts_recent_needs_user_entries_only(self):
+        state = {"entries": [{"kind": "needs-user", "ts": NOW_MS}, {"kind": "status", "ts": NOW_MS},
+                             {"kind": "needs-user", "ts": NOW_MS - 3600_000},
+                             {"kind": "needs-user", "ts": NOW_MS - 30 * 86400_000}]}
         self.assertIn("reeds 2 need you", run("bar-reeds", [], state))
 
     def test_nothing_pending_renders_nothing(self):
-        self.assertEqual(run("bar-reeds", [], {"entries": [{"kind": "done"}]}), "")
+        self.assertEqual(run("bar-reeds", [], {"entries": [{"kind": "done", "ts": NOW_MS}]}), "")
 
 
 if __name__ == "__main__":
