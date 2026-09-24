@@ -86,6 +86,7 @@ mkdir -p ~/.config/alacritty/themes
 mkdir -p ~/.config/1Password/ssh
 mkdir -p ~/.config/btop/themes
 mkdir -p ~/.config/jj
+mkdir -p ~/.config/tmux
 mkdir -p ~/.claude
 
 # Clone alacritty themes if not already present
@@ -110,6 +111,7 @@ ln -sf "$root/.config/alacritty/rose-pine.toml" ~/.config/alacritty/rose-pine.to
 ln -sf "$root/.config/nvim" ~/.config/nvim
 ln -sf "$root/.config/starship.toml" ~/.config/starship.toml
 ln -sf "$root/.config/jj/config.toml" ~/.config/jj/config.toml
+ln -sfn "$root/.config/tmux/bar" ~/.config/tmux/bar
 ln -sf "$root/.config/btop/themes/catppuccin_mocha.theme" ~/.config/btop/themes/catppuccin_mocha.theme
 ln -sf "$root/.config/btop/themes/rose-pine.theme" ~/.config/btop/themes/rose-pine.theme
 ln -sf "$root/.gitconfig-riotbyte" ~/.gitconfig-riotbyte
@@ -117,6 +119,9 @@ ln -sf "$root/.gitconfig-personal" ~/.gitconfig-personal
 ln -sf "$root/.claude/statusline.sh" ~/.claude/statusline.sh
 
 mkdir -p ~/.local/bin
+ln -sf "$root/bin/bar" ~/.local/bin/bar
+ln -sf "$root/bin/bar-lib" ~/.local/bin/bar-lib
+ln -sf "$root/bin/bar-sys" ~/.local/bin/bar-sys
 ln -sf "$root/bin/researchmon" ~/.local/bin/researchmon
 ln -sf "$root/bin/statmon" ~/.local/bin/statmon
 ln -sf "$root/bin/throb" ~/.local/bin/throb
