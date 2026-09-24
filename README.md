@@ -64,6 +64,18 @@ the project `.env` ignored by Git.
 
 ## Tools (bin/)
 
+- `researchmon`: tracks explicitly selected Codex research threads on the shared
+  local app server. `researchmon track <thread-id>` adds a thread; `untrack`
+  removes it, and `list` prints tracked IDs. Inside a Codex tool shell, the ID
+  defaults to `CODEX_THREAD_ID`. The tmux bar refreshes a cached summary every
+  status interval; the sampler polls every five seconds. Waiting, idle, unloaded,
+  and error states are shown separately. Idle does not imply research is done.
+  `researchmon sample` queries live status; `status` only reads the cache.
+  The sampler starts with tmux and reports disconnected if its cache goes stale.
+  It uses the existing daemon socket without starting or resuming Codex tasks.
+  Override `RESEARCHMON_SOCKET` for a different Unix socket or
+  `RESEARCHMON_HOME` for a different state directory. Requires Python 3 and
+  a Codex daemon with the local WebSocket control interface.
 - `statmon`: sampler daemon behind the tmux status bar. It writes files under
   `~/.statmon/` and the bar cats them; samplers are never forked from `#()`.
 - `throb`: rainbow throbber for the tmux status bar with room for a passing

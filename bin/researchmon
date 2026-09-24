@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+"""Track Codex research threads and cache their status for tmux."""
+
+import argparse
+import base64
+import hashlib
+from collections import Counter
+import fcntl
+import json
+import os
+from pathlib import Path
+import socket
+import struct
+import subprocess
+import sys
+import time
+import uuid
+
+STORE = Path(os.environ.get('RESEARCHMON_HOME', str(Path.home() / '.local/state/researchmon')))
+INTERVAL = 5
+TIMEOUT = 5
+
+
+def summary(statuses):
+    def classify(status):
+        kind = status.get('type')
+        if kind == 'active':
+            flags = status.get('activeFlags', [])
+            return 'waiting' if any(flag in flags for flag in ('waitingOnApproval', 'waitingOnUserInput')) else 'running'
+        return {'idle': 'idle', 'notLoaded': 'unloaded', 'systemError': 'error'}.get(kind, 'unknown')
+
+    counts = Counter(map(classify, statuses))
+    parts = [f'{counts[kind]} {kind}' for kind in ('running', 'waiting', 'error', 'idle', 'unloaded', 'unknown') if counts[kind]]
+    return 'Research: ' + (' | '.join(parts) if parts else 'none')
+
+
+class Connection:
+    def __enter__(self):
+        codex_home = Path(os.environ.get('CODEX_HOME', str(Path.home() / '.codex')))
+        path = os.environ.get('RESEARCHMON_SOCKET', str(codex_home / 'app-server-control/app-server-control.sock'))
+        self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.deadline = time.monotonic() + TIMEOUT
+        self.socket.settimeout(TIMEOUT)
+        self.sequence = 0
+        try:
+            self.socket.connect(path)
+            key = base64.b64encode(os.urandom(16)).decode()
+            self.socket.sendall((
+                f'GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n'
+                f'Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n'
+                'Sec-WebSocket-Version: 13\r\n\r\n'
+            ).encode())
+            headers = b''
+            while not headers.endswith(b'\r\n\r\n'):
+                headers += self.receive(1)
+                if len(headers) > 16384:
+                    raise ValueError('Oversized handshake')
+            expected = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
+            lines = headers.decode().split('\r\n')
+            fields = {name.lower(): value.strip() for name, value in (line.split(':', 1) for line in lines[1:] if ':' in line)}
+            if lines[0].split()[1] != '101' or fields.get('sec-websocket-accept') != expected:
+                raise ValueError('Invalid WebSocket handshake')
+            return self
+        except BaseException:
+            self.socket.close()
+            raise
+
+    def __exit__(self, *args):
+        self.socket.close()
+
+    def receive(self, length):
+        data = b''
+        while len(data) < length:
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("App-server did not respond")
+            self.socket.settimeout(remaining)
+            chunk = self.socket.recv(length - len(data))
+            if not chunk:
+                raise ConnectionError('App-server disconnected')
+            data += chunk
+        return data
+
+    def send(self, data, opcode=1):
+        mask = os.urandom(4)
+        size = len(data)
+        header = bytes([128 | opcode])
+        if size < 126:
+            header += bytes([128 | size])
+        elif size < 65536:
+            header += bytes([128 | 126]) + struct.pack('!H', size)
+        else:
+            header += bytes([128 | 127]) + struct.pack('!Q', size)
+        self.socket.sendall(header + mask + bytes(value ^ mask[i % 4] for i, value in enumerate(data)))
+
+    def message(self, deadline):
+        data = b''
+        while time.monotonic() < deadline:
+            self.socket.settimeout(max(0.001, deadline - time.monotonic()))
+            first, second = self.receive(2)
+            opcode = first & 15
+            size = second & 127
+            if size == 126:
+                size = struct.unpack('!H', self.receive(2))[0]
+            elif size == 127:
+                size = struct.unpack('!Q', self.receive(8))[0]
+            if second & 128 or size + len(data) > 4 * 1024 * 1024:
+                raise ValueError('Invalid or oversized server frame')
+            payload = self.receive(size)
+            if opcode == 8:
+                raise ConnectionError('App-server closed connection')
+            if opcode == 9:
+                self.send(payload, 10)
+                continue
+            if opcode == 10:
+                continue
+            if opcode not in (0, 1):
+                raise ValueError('Unexpected server frame')
+            data += payload
+            if first & 128:
+                return json.loads(data)
+        raise TimeoutError('App-server did not respond')
+
+    def request(self, method, params, deadline):
+        self.deadline = deadline
+        self.sequence += 1
+        self.send(json.dumps({'id': self.sequence, 'method': method, 'params': params}).encode())
+        while time.monotonic() < deadline:
+            message = self.message(deadline)
+            if message.get('id') == self.sequence:
+                if 'error' in message:
+                    raise ValueError('App-server request failed')
+                return message['result']
+        raise TimeoutError('App-server did not respond')
+
+
+def tracked():
+    directory = STORE / 'threads'
+    return sorted(path.name for path in directory.iterdir() if path.is_file()) if directory.exists() else []
+
+
+def sample():
+    ids = tracked()
+    if not ids:
+        return summary([])
+    deadline = time.monotonic() + TIMEOUT
+    try:
+        with Connection() as connection:
+            connection.request('initialize', {'clientInfo': {'name': 'researchmon', 'version': '0.1'}}, deadline)
+            connection.send(json.dumps({'method': 'initialized'}).encode())
+            statuses = []
+            for thread_id in ids:
+                try:
+                    result = connection.request('thread/read', {'threadId': thread_id, 'includeTurns': False}, deadline)
+                    statuses.append(result['thread']['status'])
+                except ValueError:
+                    statuses.append({'type': 'unknown'})
+            return summary(statuses)
+    except (OSError, ValueError, KeyError, ConnectionError, TimeoutError):
+        return 'Research: disconnected'
+
+
+def publish(value):
+    temporary = STORE / 'status.new'
+    temporary.write_text(value + '\n')
+    temporary.replace(STORE / 'status')
+
+
+def cached():
+    path = STORE / 'status'
+    try:
+        if time.time() - path.stat().st_mtime > INTERVAL + TIMEOUT + 10:
+            return 'Research: disconnected'
+        return path.read_text().strip()
+    except OSError:
+        return 'Research: disconnected'
+
+
+def daemon():
+    STORE.mkdir(parents=True, exist_ok=True)
+    with (STORE / 'daemon.lock').open('w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        try:
+            while subprocess.run(['tmux', 'has-session'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                publish(sample())
+                time.sleep(INTERVAL)
+        finally:
+            publish('Research: disconnected')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', nargs='?', choices=('status', 'track', 'untrack', 'list', 'sample'), default='status')
+    parser.add_argument('thread_id', nargs='?')
+    parser.add_argument('--on', action='store_true', help='start the sampler if tmux is running')
+    parser.add_argument('--daemon', action='store_true', help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if args.daemon:
+        daemon()
+        return
+    if args.on:
+        subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--daemon'],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        return
+    if args.command in ('track', 'untrack'):
+        thread_id = args.thread_id or os.environ.get('CODEX_THREAD_ID')
+        try:
+            thread_id = str(uuid.UUID(thread_id or ''))
+        except ValueError:
+            parser.error('provide a Codex thread UUID or set CODEX_THREAD_ID')
+        directory = STORE / 'threads'
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / thread_id
+        if args.command == 'track':
+            path.touch()
+        else:
+            path.unlink(missing_ok=True)
+        return
+    if args.command == 'list':
+        print('\n'.join(tracked()))
+        return
+    if args.command == 'sample':
+        print(sample())
+        return
+    print(cached())
+
+
+if __name__ == '__main__':
+    main()

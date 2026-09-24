@@ -119,6 +119,7 @@ ln -sf "$root/.gitconfig-personal" ~/.gitconfig-personal
 ln -sf "$root/.claude/statusline.sh" ~/.claude/statusline.sh
 
 mkdir -p ~/.local/bin
+ln -sf "$root/bin/researchmon" ~/.local/bin/researchmon
 ln -sf "$root/bin/statmon" ~/.local/bin/statmon
 ln -sf "$root/bin/throb" ~/.local/bin/throb
 ln -sf "$root/bin/train" ~/.local/bin/train
