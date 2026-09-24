@@ -22,8 +22,9 @@ fi
 
 # macOS-specific configuration
 if [[ "$OS_TYPE" == "mac" ]]; then
-  # Initialize Homebrew
-  if [[ -x /opt/homebrew/bin/brew ]]; then
+  # Initialize Homebrew, but only if .zprofile did not already: shellenv runs
+  # path_helper, which rebuilds PATH with /opt/homebrew/bin ahead of ~/.local/bin
+  if [[ -x /opt/homebrew/bin/brew && -z "$HOMEBREW_PREFIX" ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
   fi
 
@@ -269,3 +270,14 @@ esac
 
 export PATH="/Users/niels/.lando/bin:$PATH"; #landopath
 
+
+# ZCLI #
+export AWS_CA_BUNDLE=/opt/homebrew/etc/ca-certificates/cert.pem
+export NODE_EXTRA_CA_CERTS=/Users/niels/.zcli/zscaler_root.pem
+# end ZCLI #
+
+# mise: per-repo toolchain pins from mise.toml; keep last so its PATH wins
+eval "$(/opt/homebrew/bin/mise activate zsh)"
+
+# fnox: per-directory secrets from 1Password; after mise so the shim is on PATH
+eval "$(fnox activate zsh)"
