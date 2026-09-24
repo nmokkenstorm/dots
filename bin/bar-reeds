@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# bar-reeds: how many whisper topics are waiting on a human, from the daemon's /state fold.
+. "$(dirname "$(readlink -f "$0")")/bar-lib"
+INTERVAL=30
+REEDS="${REEDS_URL:-http://localhost:7333}"
+
+# stdin: /state json.
+summarise() {
+  jq -r '[.entries[]? | select(.kind == "needs-user")] | length
+         | if . == 0 then empty else "#[fg=#f6c177]reeds \(.) need you#[default]" end'
+}
+
+render() { curl -sf --max-time 2 "$REEDS/state" 2>/dev/null | summarise; }
+
+case "${1:-}" in
+  summarise) summarise ;;
+  *) bar_main "$@" ;;
+esac
