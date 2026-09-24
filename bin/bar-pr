@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# bar-pr: open pull requests per repo, from gh. Repos file (~/.config/tmux/bar/repos,
+# BAR_PR_REPOS overrides): one "<owner>/<repo> [gh-account]" per line; with an account,
+# gh runs as that login and "to review" means requested from it.
+. "$(dirname "$(readlink -f "$0")")/bar-lib"
+INTERVAL=300
+REPOS="${BAR_PR_REPOS:-${XDG_CONFIG_HOME:-$HOME/.config}/tmux/bar/repos}"
+
+# stdin: gh pr list json. $1 repo label, $2 login that counts as "me".
+summarise() {
+  jq -r --arg repo "$1" --arg me "$2" '
+    [.[] | select(.isDraft | not)] as $prs
+    | if ($prs | length) == 0 then empty else
+      ([$prs[] | select(.reviewDecision == "APPROVED")] | length) as $approved
+      | ([$prs[] | select(.author.login != $me) | select(any(.reviewRequests[]?; .login == $me))] | length) as $mine
+      | "\($repo) \($prs | length) open · \($approved) approved · "
+        + (if $mine > 0 then "#[fg=#f6c177]\($mine) to review#[default]" else "\($mine) to review" end)
+      end'
+}
+
+one_repo() {
+  local repo=$1 account=${2:-} token me
+  token=$([ -n "$account" ] && env -u GH_TOKEN -u GITHUB_TOKEN gh auth token --hostname github.com --user "$account" 2>/dev/null)
+  me=${account:-$(gh api user --jq .login 2>/dev/null)}
+  GH_TOKEN="${token:-${GH_TOKEN:-}}" gh pr list -R "$repo" --state open --limit 100 \
+    --json author,reviewDecision,reviewRequests,isDraft 2>/dev/null | summarise "${repo##*/}" "$me"
+}
+
+render() {
+  [ -f "$REPOS" ] || return 0
+  local out="" repo account seg
+  while read -r repo account _; do
+    case "$repo" in ''|'#'*) continue ;; esac
+    seg=$(one_repo "$repo" "$account")
+    [ -n "$seg" ] && out+="${out:+ #[fg=#908caa]│#[default] }$seg"
+  done <"$REPOS"
+  printf '%s' "$out"
+}
+
+case "${1:-}" in
+  summarise) shift; summarise "$@" ;;
+  *) bar_main "$@" ;;
+esac
