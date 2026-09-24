@@ -1,0 +1,2 @@
+# <left|centre|right> <name>; a module publishes into @bar_<name>
+right sys

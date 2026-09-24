@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# bar-sys: cpu, temperature, battery and network for the bar. statmon owns the
+# sampling of temp and net; this only presents its files.
+. "$(dirname "$(readlink -f "$0")")/bar-lib"
+INTERVAL=15
+STATMON="${STATMON_HOME:-$HOME/.statmon}"
+
+cpu() { ps -A -o %cpu= | awk -v n="$(sysctl -n hw.ncpu)" '{s+=$1} END {printf "%d%%", s/n}'; }
+temp() { cat "$STATMON/temp" 2>/dev/null; }
+net() { cat "$STATMON/net" 2>/dev/null; }
+battery() {
+  pmset -g batt 2>/dev/null | awk -F'[;\t]' '/InternalBattery/ {gsub(/ /,"",$2); gsub(/^ +| +$/,"",$3); print ($3 ~ /discharging/ ? "BAT " : "CHG ") $2; exit}'
+}
+
+render() {
+  local out="" p
+  for p in "CPU $(cpu) $(temp)" "$(battery)" "$(net)"; do
+    [ -n "$p" ] && out+="${out:+ #[fg=#908caa]│#[default] }$p"
+  done
+  printf '%s' "$out"
+}
+
+bar_main "$@"
