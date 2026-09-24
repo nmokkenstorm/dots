@@ -589,6 +589,16 @@ require('lazy').setup({
 
         biome = {},
 
+        intelephense = {
+          settings = {
+            intelephense = {
+              environment = {
+                phpVersion = '8.3.0',
+              },
+            },
+          },
+        },
+
         lua_ls = {
           -- cmd = { ... },
           -- filetypes = { ... },
