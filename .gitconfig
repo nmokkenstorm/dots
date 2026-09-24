@@ -63,3 +63,11 @@
 	program = /opt/homebrew/bin/gpg
 [gpg "ssh"]
 	allowedSignersFile = /Users/niels/.ssh/allowed_signers
+[http]
+	sslCAInfo = /Users/niels/.zcli/zscaler_root.pem
+
+[includeIf "gitdir:~/Developer/dpg/"]
+	path = ~/.gitconfig-dpg
+
+[includeIf "gitdir:~/Developer/congos/"]
+	path = ~/.gitconfig-personal
