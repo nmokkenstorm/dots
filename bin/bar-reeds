@@ -3,11 +3,13 @@
 . "$(dirname "$(readlink -f "$0")")/bar-lib"
 INTERVAL=30
 REEDS="${REEDS_URL:-http://localhost:7333}"
+WINDOW="${BAR_REEDS_WINDOW:-86400}"
 
-# stdin: /state json.
+# stdin: /state json. The fold keeps every needs-user ever whispered, so only recent ones count.
 summarise() {
-  jq -r '[.entries[]? | select(.kind == "needs-user")] | length
-         | if . == 0 then empty else "#[fg=#f6c177]reeds \(.) need you#[default]" end'
+  jq -r --argjson since "$(( ($(date +%s) - WINDOW) * 1000 ))" '
+    [.entries[]? | select(.kind == "needs-user" and (.ts // 0) > $since)] | length
+    | if . == 0 then empty else "#[fg=#f6c177]reeds \(.) need you#[default]" end'
 }
 
 render() { curl -sf --max-time 2 "$REEDS/state" 2>/dev/null | summarise; }
