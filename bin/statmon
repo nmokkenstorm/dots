@@ -8,7 +8,7 @@
 #   statmon --off     stop
 #   statmon           status
 #
-# Results land in ~/.statmon/{temp,net}.
+# Results land in ~/.statmon/{temp,gpu,net}.
 
 set -u
 STORE="${STATMON_HOME:-$HOME/.statmon}"
@@ -20,14 +20,16 @@ mkdir -p "$STORE"
 running() { [ -s "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
 
 # macmon can hang when its parent context is odd; sample it with a watchdog so
-# at most one attempt is ever in flight.
-sample_temp() {
-  macmon pipe -s1 -i 500 </dev/null 2>/dev/null |
-    jq -r '"\(.temp.cpu_temp_avg | round)°C"' >"$STORE/temp.new" &
+# at most one attempt is ever in flight. One sample feeds both temp and gpu.
+sample_macmon() {
+  macmon pipe -s1 -i 500 </dev/null 2>/dev/null >"$STORE/macmon.new" &
   local sampler=$!
   ( sleep "$TEMP_KILL_AFTER"; kill -9 "$sampler" 2>/dev/null ) &
   local watchdog=$!
-  wait "$sampler" 2>/dev/null && [ -s "$STORE/temp.new" ] && mv "$STORE/temp.new" "$STORE/temp"
+  wait "$sampler" 2>/dev/null && [ -s "$STORE/macmon.new" ] && {
+    jq -r '"\(.temp.cpu_temp_avg | round)°C"' "$STORE/macmon.new" >"$STORE/temp.new" && mv "$STORE/temp.new" "$STORE/temp"
+    jq -r '"GPU \(.gpu_usage[1] * 100 | round)% \(.gpu_power | round)W"' "$STORE/macmon.new" >"$STORE/gpu.new" && mv "$STORE/gpu.new" "$STORE/gpu"
+  }
   kill "$watchdog" 2>/dev/null
 }
 
@@ -62,7 +64,7 @@ case "${1:-}" in
     (
       trap 'rm -f "$PIDFILE"' EXIT
       while tmux has-session 2>/dev/null; do
-        sample_temp
+        sample_macmon
         sample_net
         sleep "$INTERVAL"
       done
