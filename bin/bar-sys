@@ -4,19 +4,45 @@
 . "$(dirname "$(readlink -f "$0")")/bar-lib"
 INTERVAL=15
 STATMON="${STATMON_HOME:-$HOME/.statmon}"
+# Rose Pine: subtle labels, text, then foam, iris, rose, gold and love accents.
+L='#[fg=#908caa]' T='#[fg=#e0def4]' FOAM='#[fg=#9ccfd8]' IRIS='#[fg=#c4a7e7]' ROSE='#[fg=#ebbcba]' GOLD='#[fg=#f6c177]' LOVE='#[fg=#eb6f92]'
 
 cpu() { ps -A -o %cpu= | awk -v n="$(sysctl -n hw.ncpu)" '{s+=$1} END {printf "%d%%", s/n}'; }
-temp() { cat "$STATMON/temp" 2>/dev/null; }
-net() { cat "$STATMON/net" 2>/dev/null; }
-gpu() { cat "$STATMON/gpu" 2>/dev/null; }
+temp() {
+  local t; t=$(cat "$STATMON/temp" 2>/dev/null) || return 0
+  local n=${t%%[!0-9]*}
+  printf '%s%s' "$([ "${n:-0}" -ge 95 ] && echo "$LOVE" || { [ "${n:-0}" -ge 85 ] && echo "$GOLD" || echo "$T"; })" "$t"
+}
+net() { sed -E "s/([↓↑])([^ ]+)/$L\1$ROSE\2/g" "$STATMON/net" 2>/dev/null; }
+gpu() { sed -E "s/^GPU (.*)$/${L}GPU $IRIS\1/" "$STATMON/gpu" 2>/dev/null; }
+# ioreg prints negative currents as unsigned 64-bit, past what awk's doubles hold exactly.
+signed() { [ "${#1}" -ge 20 ] && echo "$1 - 2^64" | bc || echo "$1"; }
+
 battery() {
-  pmset -g batt 2>/dev/null | awk -F'[;\t]' '/InternalBattery/ {gsub(/ /,"",$2); gsub(/^ +| +$/,"",$3); print ($3 ~ /discharging/ ? "BAT " : "CHG ") $2; exit}'
+  local io ma
+  io=$(ioreg -rn AppleSmartBattery 2>/dev/null)
+  ma=$(sed -nE 's/^ +"Amperage" = ([0-9]+)$/\1/p' <<<"$io")
+  [ -n "$ma" ] || return 0
+  awk -v ma="$(signed "$ma")" -v L="$L" -v T="$T" -v FOAM="$FOAM" -v GOLD="$GOLD" -v LOVE="$LOVE" '
+    $1 ~ /^"(CurrentCapacity|Voltage|AvgTimeToFull|TimeRemaining|IsCharging|ExternalConnected|FullyCharged)"$/ && $2 == "=" {
+      gsub(/"/, "", $1); b[$1] = $3
+    }
+    function eta(m) { return (m > 0 && m < 65535) ? sprintf(" %d:%02d", m / 60, m % 60) : "" }
+    END {
+      pct = b["CurrentCapacity"] "%"
+      watts = sprintf(" %+.1fW", ma * b["Voltage"] / 1e6)
+      low = b["CurrentCapacity"] < 20 ? LOVE : GOLD
+      if (b["ExternalConnected"] != "Yes") { print L "BAT " low pct watts T eta(b["TimeRemaining"]); exit }
+      if (b["FullyCharged"] == "Yes") { print L "AC " T pct; exit }
+      if (ma < 0) { print L "AC " LOVE pct watts T; exit }
+      print (b["IsCharging"] == "Yes" ? L "CHG " FOAM pct watts T eta(b["AvgTimeToFull"]) : L "AC " T pct)
+    }' <<<"$io"
 }
 
 render() {
   local out="" p
-  for p in "CPU $(cpu) $(temp)" "$(gpu)" "$(battery)" "$(net)"; do
-    [ -n "$p" ] && out+="${out:+ #[fg=#908caa]│#[default] }$p"
+  for p in "${L}CPU $FOAM$(cpu) $(temp)" "$(gpu)" "$(battery)" "$(net)"; do
+    [ -n "$p" ] && out+="${out:+ $L│$T }$p"
   done
   printf '%s' "$out"
 }

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 BAR = Path(__file__).resolve().parents[1] / "bin" / "bar"
-SEP = "#[fg=#908caa] │ #[default]"
+SEP = "#[fg=#908caa] │ #[fg=#e0def4]"
 
 
 def fmt(text=None):
@@ -22,14 +22,14 @@ def fmt(text=None):
 class BarFormat(unittest.TestCase):
     def test_missing_file_falls_back_to_sys_on_the_right(self):
         out = fmt().stdout
-        self.assertTrue(out.startswith("#[align=left default]"))
-        self.assertIn("#[align=right default]#{?@bar_sys,#{@bar_sys},}", out)
+        self.assertTrue(out.startswith("#[align=left default fg=#e0def4]"))
+        self.assertIn("#[align=right default fg=#e0def4]#{?@bar_sys,#{@bar_sys},}", out)
 
     def test_groups_join_with_a_separator_after_the_first(self):
         cases = {
-            "left pr\n": "#[align=left default]#{?@bar_pr,#{@bar_pr},}",
+            "left pr\n": "#[align=left default fg=#e0def4]#{?@bar_pr,#{@bar_pr},}",
             "right sys\nright reeds\n": f"#{{?@bar_sys,#{{@bar_sys}},}}#{{?@bar_reeds,{SEP}#{{@bar_reeds}},}}",
-            "# a comment\n\ncentre train\n": "#[align=centre default]#{?@bar_train,#{@bar_train},}",
+            "# a comment\n\ncentre train\n": "#[align=centre default fg=#e0def4]#{?@bar_train,#{@bar_train},}",
         }
         for text, expected in cases.items():
             with self.subTest(text=text):

@@ -23,7 +23,7 @@ class BarPr(unittest.TestCase):
     def test_counts_open_approved_and_requested_from_me(self):
         prs = [pr("me", "APPROVED"), pr("other", requested=("me",)), pr("other"), pr("me", draft=True)]
         out = run("bar-pr", ["ai-gateway", "me"], prs)
-        self.assertIn("ai-gateway 3 open", out)
+        self.assertIn("ai-gateway#[fg=#e0def4] 3 open", out)
         self.assertIn("1 approved", out)
         self.assertIn("1 to review", out)
 
