@@ -63,3 +63,9 @@
 [http]
 	sslCAInfo = /Users/niels/.zcli/zscaler_root.pem
 
+[credential "https://github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
