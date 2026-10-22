@@ -9,7 +9,7 @@ WINDOW="${BAR_REEDS_WINDOW:-86400}"
 summarise() {
   jq -r --argjson since "$(( ($(date +%s) - WINDOW) * 1000 ))" '
     [.entries[]? | select(.kind == "needs-user" and (.ts // 0) > $since)] | length
-    | if . == 0 then empty else "#[fg=#f6c177]reeds \(.) need you#[default]" end'
+    | if . == 0 then empty else "#[fg=#f6c177]reeds \(.) need you#[fg=#e0def4]" end'
 }
 
 render() { curl -sf --max-time 2 "$REEDS/state" 2>/dev/null | summarise; }
