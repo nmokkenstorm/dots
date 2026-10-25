@@ -7,7 +7,8 @@ STATMON="${STATMON_HOME:-$HOME/.statmon}"
 # Rose Pine: subtle labels, text, then foam, iris, rose, gold and love accents.
 L='#[fg=#908caa]' T='#[fg=#e0def4]' FOAM='#[fg=#9ccfd8]' IRIS='#[fg=#c4a7e7]' ROSE='#[fg=#ebbcba]' GOLD='#[fg=#f6c177]' LOVE='#[fg=#eb6f92]'
 
-cpu() { ps -A -o %cpu= | awk -v n="$(sysctl -n hw.ncpu)" '{s+=$1} END {printf "%d%%", s/n}'; }
+ncpu() { sysctl -n hw.ncpu 2>/dev/null || nproc; }
+cpu() { ps -A -o %cpu= | awk -v n="$(ncpu)" '{s+=$1} END {printf "%d%%", s/n}'; }
 temp() {
   local t; t=$(cat "$STATMON/temp" 2>/dev/null) || return 0
   local n=${t%%[!0-9]*}
@@ -18,8 +19,23 @@ gpu() { sed -E "s/^GPU (.*)$/${L}GPU $IRIS\1/" "$STATMON/gpu" 2>/dev/null; }
 # ioreg prints negative currents as unsigned 64-bit, past what awk's doubles hold exactly.
 signed() { [ "${#1}" -ge 20 ] && echo "$1 - 2^64" | bc || echo "$1"; }
 
+# Linux: the first power_supply that reports capacity (macsmc-battery on Asahi, BAT0 elsewhere)
+battery_linux() {
+  local b pct st uw
+  for b in /sys/class/power_supply/*; do [ -r "$b/capacity" ] && break; done
+  [ -r "$b/capacity" ] || return 0
+  pct=$(cat "$b/capacity") st=$(cat "$b/status" 2>/dev/null) uw=$(cat "$b/power_now" 2>/dev/null || echo 0)
+  awk -v pct="$pct" -v st="$st" -v uw="$uw" -v L="$L" -v T="$T" -v FOAM="$FOAM" -v GOLD="$GOLD" -v LOVE="$LOVE" 'BEGIN {
+    watts = sprintf(" %+.1fW", uw / 1e6)
+    if (st == "Discharging") { print L "BAT " (pct < 20 ? LOVE : GOLD) pct "%" watts T; exit }
+    if (st == "Charging") { print L "CHG " FOAM pct "%" watts T; exit }
+    print L "AC " T pct "%"
+  }'
+}
+
 battery() {
   local io ma
+  command -v ioreg >/dev/null 2>&1 || { battery_linux; return; }
   io=$(ioreg -rn AppleSmartBattery 2>/dev/null)
   ma=$(sed -nE 's/^ +"Amperage" = ([0-9]+)$/\1/p' <<<"$io")
   [ -n "$ma" ] || return 0
