@@ -4,9 +4,15 @@ palette = 'catppuccin_mocha'
 
 # Minimal prompt - user/folder/git/time moved to tmux status bar
 format = """
+$hostname\
 $directory\
 $git_branch\
 $character"""
+
+[hostname]
+ssh_only = false
+detect_env_vars = ['STARSHIP_SHOW_HOST', 'SSH_CONNECTION']
+format = '[$hostname](bold fg:peach) '
 
 [directory]
 truncate_to_repo = true
