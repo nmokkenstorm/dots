@@ -12,6 +12,9 @@ case "$(uname -s)" in
   *)          export OS_TYPE="unknown";;
 esac
 
+# Starship shows the host off the Mac, where several machines share this config
+[[ "$OS_TYPE" != "mac" ]] && export STARSHIP_SHOW_HOST=1
+
 # Ensure user bin directories are in PATH
 export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH"
 
@@ -147,6 +150,8 @@ source $ZSH/oh-my-zsh.sh
 # Load zsh-syntax-highlighting if available
 if [ -f "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]; then
   source "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+elif [ -f /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]; then
+  source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 fi
 
 # Initialize Starship prompt if available
@@ -253,7 +258,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
 # pnpm
-export PNPM_HOME="/Users/niels/Library/pnpm"
+[[ "$OS_TYPE" == "mac" ]] && export PNPM_HOME="$HOME/Library/pnpm" || export PNPM_HOME="$HOME/.local/share/pnpm"
 case ":$PATH:" in
   *":$PNPM_HOME:"*) ;;
   *) export PATH="$PNPM_HOME:$PATH" ;;
@@ -271,19 +276,23 @@ case ":$PATH:" in
 esac
 # .NET end
 
-export PATH="/Users/niels/.lando/bin:$PATH"; #landopath
+if [[ "$OS_TYPE" == "mac" ]]; then
+  export PATH="$HOME/.lando/bin:$PATH"; #landopath
 
-
-# ZCLI #
-export AWS_CA_BUNDLE=/opt/homebrew/etc/ca-certificates/cert.pem
-export NODE_EXTRA_CA_CERTS=/Users/niels/.zcli/zscaler_root.pem
-# end ZCLI #
+  # ZCLI #
+  export AWS_CA_BUNDLE=/opt/homebrew/etc/ca-certificates/cert.pem
+  export NODE_EXTRA_CA_CERTS=$HOME/.zcli/zscaler_root.pem
+  # end ZCLI #
+fi
 
 # mise: per-repo toolchain pins from mise.toml; keep last so its PATH wins
-eval "$(/opt/homebrew/bin/mise activate zsh)"
+command -v mise >/dev/null 2>&1 && eval "$(mise activate zsh)"
 
 # fnox: per-directory secrets from 1Password; after mise so the shim is on PATH
-eval "$(fnox activate zsh)"
+command -v fnox >/dev/null 2>&1 && eval "$(fnox activate zsh)"
+
+# Per-machine additions that do not belong in the shared config
+[[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 
 # Client-specific shell config, kept out of this public repo
 [[ -r ~/.config/dots-private/zshrc ]] && source ~/.config/dots-private/zshrc

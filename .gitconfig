@@ -12,7 +12,7 @@
 [includeIf "gitdir:~/Developer/personal/"]
 	path = ~/.gitconfig-personal
 [core]
-	excludesfile = /Users/niels/.globalgitignore
+	excludesfile = ~/.globalgitignore
 [pull]
 	rebase = true
 [rebase]
@@ -57,18 +57,13 @@
 	ff = only
 [gpg]
 	format = openpgp
-	program = /opt/homebrew/bin/gpg
 [gpg "ssh"]
-	allowedSignersFile = /Users/niels/.ssh/allowed_signers
-[http]
-	sslCAInfo = /Users/niels/.zcli/zscaler_root.pem
+	allowedSignersFile = ~/.ssh/allowed_signers
 
 # Client-specific identities; git skips a missing include
 [include]
 	path = ~/.config/dots-private/gitconfig
-[credential "https://github.com"]
-	helper = 
-	helper = !/opt/homebrew/bin/gh auth git-credential
-[credential "https://gist.github.com"]
-	helper = 
-	helper = !/opt/homebrew/bin/gh auth git-credential
+
+# Platform paths and signing, linked by install.sh to .gitconfig-macos or .gitconfig-linux
+[include]
+	path = ~/.gitconfig-os
