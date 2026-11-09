@@ -199,6 +199,9 @@ fi
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
+# gpg pinentry-curses needs the tty when stdin is a pipe
+export GPG_TTY=$(tty)
+
 # Docker color output
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
