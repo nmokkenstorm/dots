@@ -13,7 +13,8 @@ Step commands run via bash in their own process group. Exit 0 marks the step
 done, 75 (EX_TEMPFAIL) hands it to a human (needs-user), anything else fails
 and stops the train; an interrupted runner marks the step fail and kills the
 group. Rerunning `train run` skips done/skipped steps, so a fixed train
-resumes where it stopped. External sessions may drive a train with
+resumes where it stopped. `train run --parallel` runs every unfinished step
+at once instead, for steps that wait on independent outcomes. External sessions may drive a train with
 `train mark` alone; such steps carry `exit 75` placeholder commands. Marks
 are flock-serialized, so concurrent markers are safe.
 
@@ -240,13 +241,14 @@ def cmd_new(id: str, title: str) -> None:
         print(f"created {id}; add steps to {train.dir / 'plan'} (key|label|command)")
 
 
-def run_step(command: str) -> tuple[int, str]:
+def run_step(command: str, started=lambda proc: None) -> tuple[int, str]:
     """Run a step, streaming stderr through while keeping a tail for detail."""
     proc = subprocess.Popen(
         ["bash", "-c", command],
         stdin=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
         start_new_session=True,
     )
+    started(proc)
     tail: deque[str] = deque(maxlen=10)
     assert proc.stderr is not None
     try:
@@ -271,10 +273,83 @@ def start_heartbeat(dir_: Path) -> None:
     threading.Thread(target=beat, daemon=True).start()
 
 
-def cmd_run(id: str | None) -> int:
+def finish_step(train: Train, key: str, returncode: int, detail: str) -> None:
+    status = (
+        Status.DONE if returncode == 0
+        else Status.NEEDS_USER if returncode == EX_TEMPFAIL
+        else Status.FAIL
+    )
+    train.mark(key, status, "" if status is Status.DONE else detail)
+
+
+def publish_arrival(train: Train) -> int:
+    train.publish(
+        f"train.{train.id}",
+        {"title": train.title, "steps": len(train.steps())},
+        "done",
+    )
+    print(f"train {train.id}: all steps done, party over")
+    return 0
+
+
+def cmd_run_parallel(train: Train) -> int:
+    """Run every unfinished step at once; each is marked the moment it ends.
+
+    For steps that only wait on independent outcomes (PRs in separate queues),
+    where running in plan order would leave finished steps showing pending
+    behind a slow one. A fail or needs-user does not stop the others. The run
+    exits with the first failing step's code, else 75 if any step needs a
+    human, else 0.
+    """
+    pending = [s for s in train.steps() if train.state()[s.key].status not in FINISHED]
+    procs: list[subprocess.Popen] = []
+    lock = threading.Lock()
+
+    def started(proc: subprocess.Popen) -> None:
+        with lock:
+            procs.append(proc)
+
+    def run(step: Step) -> int:
+        train.mark(step.key, Status.LIVE)
+        returncode, detail = run_step(step.command, started)
+        finish_step(train, step.key, returncode, detail)
+        return returncode
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    pool = ThreadPoolExecutor(max_workers=max(len(pending), 1))
+    futures = {step.key: pool.submit(run, step) for step in pending}
+    try:
+        codes = [f.result() for f in futures.values()]
+    except BaseException:
+        with lock:
+            for proc in procs:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+        pool.shutdown(wait=True, cancel_futures=True)
+        for key, future in futures.items():
+            if not future.done() or future.exception() is not None:
+                train.mark(key, Status.FAIL, "interrupted")
+        raise
+    pool.shutdown()
+    failed = next((c for c in codes if c not in (0, EX_TEMPFAIL)), None)
+    if failed is not None:
+        print(f"train {train.id}: a step failed (exit {failed})", file=sys.stderr)
+        return failed
+    if EX_TEMPFAIL in codes:
+        print(f"train {train.id}: steps handed to a human")
+        return EX_TEMPFAIL
+    return publish_arrival(train)
+
+
+def cmd_run(id: str | None, parallel: bool = False) -> int:
     train = resolve(id)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     start_heartbeat(train.dir)
+    if parallel:
+        return cmd_run_parallel(train)
     for step in train.steps():
         current = train.state().get(step.key)
         if current is None:
@@ -301,13 +376,7 @@ def cmd_run(id: str | None) -> int:
                 file=sys.stderr,
             )
             return returncode
-    train.publish(
-        f"train.{train.id}",
-        {"title": train.title, "steps": len(train.steps())},
-        "done",
-    )
-    print(f"train {train.id}: all steps done, party over")
-    return 0
+    return publish_arrival(train)
 
 
 ROW_STYLE = {
@@ -634,6 +703,10 @@ def main() -> int:
     p_new.add_argument("title", nargs="*")
     p_run = sub.add_parser("run", help="run remaining steps, stop on fail/needs-user")
     p_run.add_argument("id", nargs="?")
+    p_run.add_argument(
+        "--parallel", action="store_true",
+        help="run all remaining steps at once, marking each as it ends",
+    )
     p_mark = sub.add_parser("mark", help="set one step's status")
     p_mark.add_argument("id")
     p_mark.add_argument("key")
@@ -661,7 +734,7 @@ def main() -> int:
         case "new":
             cmd_new(args.id, " ".join(args.title))
         case "run":
-            return cmd_run(args.id)
+            return cmd_run(args.id, args.parallel)
         case "mark":
             resolve(args.id).mark(args.key, Status(args.status), args.detail)
         case "watch":

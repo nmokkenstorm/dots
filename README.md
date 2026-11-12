@@ -90,7 +90,8 @@ the project `.env` ignored by Git.
   A train is a plan of `key|label|command` steps stored under
   `~/.local/state/train/<id>/`. Step exit 0 marks it done, 75 hands it to a
   human (needs-user), anything else stalls the train; rerunning `train run`
-  resumes past done steps. Step stderr streams through while a tail is kept
+  resumes past done steps; `train run --parallel` runs every unfinished
+  step at once, for steps that wait on independent outcomes. Step stderr streams through while a tail is kept
   as the failure detail. For steps driven externally via `train mark`
   (another agent session), use `exit 75` as the placeholder command so
   `train run` hands them over instead of completing them. Marks mirror to
