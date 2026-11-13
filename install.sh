@@ -131,6 +131,14 @@ ln -sf "$root/bin/train" ~/.local/bin/train
 ln -sf "$root/bin/glab-merge" ~/.local/bin/glab-merge
 ln -sf "$root/bin/codex-wt" ~/.local/bin/codex-wt
 ln -sf "$root/bin/codex-watch" ~/.local/bin/codex-watch
+ln -sf "$root/bin/agents-md" ~/.local/bin/agents-md
+
+# Global agent instructions: one generated file shared by Claude Code and Codex
+echo "Building global agent instructions..."
+mkdir -p ~/.codex
+"$root/bin/agents-md"
+ln -sfn ~/.config/agents/AGENTS.md ~/.claude/CLAUDE.md
+ln -sfn ~/.config/agents/AGENTS.md ~/.codex/AGENTS.md
 
 # Configure git
 echo "Configuring git..."
