@@ -1,13 +1,14 @@
 --- a/peon.sh
 +++ b/peon.sh
-@@ -35,15 +35,21 @@
+@@ -35,15 +35,22 @@
  detect_headphones() {
    case "$PEON_PLATFORM" in
      mac)
 -      local output default_section
 +      local output marker="Default Output Device: Yes" section
-+      # peon-play routes through the sound effects device, so that is the one to inspect
-+      [ "${USE_SOUND_EFFECTS_DEVICE:-true}" != "false" ] && marker="Default System Output Device: Yes"
++      # play_sound routes through the sound effects device whenever peon-play is available
++      [ "${USE_SOUND_EFFECTS_DEVICE:-true}" != "false" ] && find_bundled_script "peon-play" >/dev/null \
++        && marker="Default System Output Device: Yes"
        output=$(system_profiler SPAudioDataType 2>/dev/null) || return 0
 -      # Get the device section containing "Default Output Device: Yes" (10 lines before, 5 after)
 -      default_section=$(echo "$output" | grep -B10 -A5 "Default Output Device: Yes" | tr '[:upper:]' '[:lower:]')

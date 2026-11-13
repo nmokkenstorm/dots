@@ -68,7 +68,9 @@ class DetectHeadphonesTests(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         patched = Path(cls.tmp.name) / "peon.sh"
         shutil.copy(UPSTREAM, patched)
-        subprocess.run(["patch", "-s", str(patched), str(PATCH)], check=True)
+        already = subprocess.run(["patch", "-s", "-f", "-R", "--dry-run", str(patched), str(PATCH)], capture_output=True)
+        if already.returncode != 0:
+            subprocess.run(["patch", "-s", "-f", str(patched), str(PATCH)], check=True)
         source = patched.read_text()
         cls.func = re.search(r"^detect_headphones\(\) \{\n.*?^\}\n", source, re.S | re.M).group(0)
 
@@ -89,7 +91,8 @@ class DetectHeadphonesTests(unittest.TestCase):
             "PEON_PLATFORM": "mac",
             "USE_SOUND_EFFECTS_DEVICE": str(sound_effects_device).lower(),
         }
-        result = subprocess.run(["bash", "-c", self.func + "detect_headphones"], env=env)
+        peon_play_found = "find_bundled_script() { true; }\n"
+        result = subprocess.run(["bash", "-c", peon_play_found + self.func + "detect_headphones"], env=env)
         return result.returncode == 0
 
     def test_cases(self):
