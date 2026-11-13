@@ -132,6 +132,8 @@ ln -sf "$root/bin/glab-merge" ~/.local/bin/glab-merge
 ln -sf "$root/bin/codex-wt" ~/.local/bin/codex-wt
 ln -sf "$root/bin/codex-watch" ~/.local/bin/codex-watch
 ln -sf "$root/bin/agents-md" ~/.local/bin/agents-md
+ln -sf "$root/bin/transcribe-call" ~/.local/bin/transcribe-call
+ln -sf "$root/bin/call-devices" ~/.local/bin/call-devices
 
 # Global agent instructions: one generated file shared by Claude Code and Codex
 echo "Building global agent instructions..."
@@ -139,6 +141,28 @@ mkdir -p ~/.codex
 "$root/bin/agents-md"
 ln -sfn ~/.config/agents/AGENTS.md ~/.claude/CLAUDE.md
 ln -sfn ~/.config/agents/AGENTS.md ~/.codex/AGENTS.md
+
+# peon-ping: config is tracked here; local fixes to the Homebrew peon.sh are re-applied after every upgrade
+echo "Configuring peon-ping..."
+mkdir -p ~/.claude/hooks/peon-ping
+ln -sf "$root/.claude/hooks/peon-ping/config.json" ~/.claude/hooks/peon-ping/config.json
+peon_sh="$(brew --prefix 2>/dev/null)/opt/peon-ping/libexec/peon.sh"
+if [ -f "$peon_sh" ]; then
+    for p in "$root"/patches/peon-ping-*.patch; do
+        if patch -s -f -R --dry-run "$peon_sh" "$p" >/dev/null 2>&1; then
+            echo "  $(basename "$p") already applied"
+        elif patch -s -f --dry-run "$peon_sh" "$p" >/dev/null 2>&1; then
+            patch -s -f "$peon_sh" "$p" && echo "  applied $(basename "$p")"
+        else
+            echo "  $(basename "$p") no longer applies; check whether upstream fixed it" >&2
+        fi
+    done
+fi
+
+# Call audio: setout switches the default output device by UID
+if command -v swiftc &> /dev/null; then
+    swiftc -O -o ~/.local/bin/setout "$root/audio/setout.swift"
+fi
 
 # Configure git
 echo "Configuring git..."

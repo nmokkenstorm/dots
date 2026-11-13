@@ -1,0 +1,42 @@
+#!/usr/bin/env swift
+// Creates "Call Output" (speakers + BlackHole) and "Call Capture" (mic + BlackHole); skips ones that exist.
+import CoreAudio
+import Foundation
+
+func exists(_ uid: String) -> Bool {
+  var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyTranslateUIDToDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+  var cf = uid as CFString
+  var id = AudioObjectID(0)
+  var size = UInt32(MemoryLayout<AudioObjectID>.size)
+  _ = withUnsafeMutablePointer(to: &cf) { AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, UInt32(MemoryLayout<CFString>.size), $0, &size, &id) }
+  return id != 0
+}
+
+func make(_ name: String, _ uid: String, _ subs: [String], stacked: Bool) {
+  guard !exists(uid) else {
+    print("\(name): already exists")
+    return
+  }
+  let desc: [String: Any] = [
+    kAudioAggregateDeviceNameKey: name,
+    kAudioAggregateDeviceUIDKey: uid,
+    kAudioAggregateDeviceMainSubDeviceKey: subs[0],
+    kAudioAggregateDeviceClockDeviceKey: subs[0],
+    kAudioAggregateDeviceIsStackedKey: stacked ? 1 : 0,
+    kAudioAggregateDeviceIsPrivateKey: 0,
+    kAudioAggregateDeviceSubDeviceListKey: subs.enumerated().map { i, s in
+      [kAudioSubDeviceUIDKey: s, kAudioSubDeviceDriftCompensationKey: i == 0 ? 0 : 1] as [String: Any]
+    },
+  ]
+  var id = AudioObjectID(0)
+  let err = AudioHardwareCreateAggregateDevice(desc as CFDictionary, &id)
+  print("\(name): \(err == noErr ? "created id \(id)" : "error \(err)")")
+}
+
+guard exists("BlackHole2ch_UID") else {
+  print("BlackHole 2ch missing: brew install --cask blackhole-2ch, then sudo killall coreaudiod")
+  exit(1)
+}
+make("Call Output", "dev.mokkenstorm.call-output", ["BuiltInSpeakerDevice", "BlackHole2ch_UID"], stacked: true)
+make("Call Capture", "dev.mokkenstorm.call-capture", ["BuiltInMicrophoneDevice", "BlackHole2ch_UID"], stacked: false)
+RunLoop.current.run(until: Date().addingTimeInterval(1))

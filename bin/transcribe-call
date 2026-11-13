@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Live-transcribe a call via whisper-stream: transcribe-call [lang] [device-name]
+set -euo pipefail
+
+lang="${1:-auto}"
+device="${2:-Call Capture}"
+root="$HOME/Developer/personal/whisper.cpp"
+model="$root/models/ggml-large-v3-turbo.bin"
+calldir="$HOME/Documents/calls/$(date '+%Y-%m-%d_%H%M')"
+out="$calldir/transcript.txt"
+
+probe=$(mktemp)
+"$root/build/bin/whisper-stream" -m "$model" -c 999 >"$probe" 2>&1 </dev/null &
+probe_pid=$!
+for _ in $(seq 50); do
+  grep -q 'attempt to open capture device' "$probe" && break
+  sleep 0.2
+done
+kill "$probe_pid" 2>/dev/null || true
+wait "$probe_pid" 2>/dev/null || true
+capture_id=$(sed -n "s/.*Capture device #\([0-9]*\): '$device'.*/\1/p" "$probe" | head -1)
+rm -f "$probe"
+
+[[ -n "$capture_id" ]] || {
+  echo "capture device '$device' not found" >&2
+  exit 1
+}
+
+mkdir -p "$calldir"
+echo "device #$capture_id ($device), lang=$lang -> $out" >&2
+exec "$root/build/bin/whisper-stream" -m "$model" -c "$capture_id" -l "$lang" \
+  -t 8 --step 0 --length 30000 -vth 0.6 -f "$out"

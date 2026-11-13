@@ -116,6 +116,26 @@ the project `.env` ignored by Git.
   protection) so it slots straight into a train step. `GLAB_MERGE_TIMEOUT`
   caps the wait in seconds (default 600).
 
+- `transcribe-call [lang] [device]`: live call transcription with whisper.cpp's
+  `whisper-stream`, capturing from the `Call Capture` aggregate device (mic plus
+  BlackHole) into `~/Documents/calls/<date>_<time>/transcript.txt`. Route the
+  call's speaker to `Call Output` (speakers plus BlackHole) first, e.g.
+  `setout dev.mokkenstorm.call-output`, and back with
+  `setout BuiltInSpeakerDevice`. One-time setup: `brew install --cask
+blackhole-2ch`, then `call-devices` creates both devices; whisper.cpp lives in
+  `~/Developer/personal/whisper.cpp` built with `-DWHISPER_SDL2=ON` and
+  `patches/whisper-cpp-multichannel.patch` (downmixes multichannel capture
+  instead of reading channel one) and the `large-v3-turbo` model.
+
+## peon-ping
+
+`install.sh` links `.claude/hooks/peon-ping/config.json` and applies
+`patches/peon-ping-*.patch` to the Homebrew `peon.sh`. `brew upgrade` overwrites
+that file, so rerun `install.sh` after upgrading; it reports a patch that no
+longer applies. `peon-ping-headphones.patch` makes `headphones_only` inspect
+the device sounds actually play on and count only Bluetooth, USB and
+headphone-named outputs, so aggregate, virtual and display outputs stay quiet.
+
 ## A train in one sitting
 
 ```sh
