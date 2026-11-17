@@ -17,7 +17,8 @@ class ZscalerScheduleTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.state = tempfile.TemporaryDirectory()
-        self.config = Path(self.dir.name) / "config"
+        self.schedule_file = Path(self.dir.name) / "schedule"
+        self.hold_file = Path(self.dir.name) / "hold"
         self.env = {
             **os.environ,
             "ZSCALER_SCHEDULE_DRY": "1",
@@ -48,27 +49,31 @@ class ZscalerScheduleTests(unittest.TestCase):
         return "skipped" if "skipped" in result.stdout else "nothing"
 
     def test_tick_runs_the_slot_that_is_due(self):
+        dotfile = (ROOT / ".config/zscaler-schedule/schedule").read_text()
         cases = [
-            ("default off slot", None, f"{TUESDAY} 18:00", "off"),
-            ("before any slot", None, f"{TUESDAY} 07:55", "nothing"),
-            ("default on slot on a weekday", None, f"{TUESDAY} 08:00", "on"),
-            ("no on slot at the weekend", None, f"{SATURDAY} 08:00", "nothing"),
-            ("custom off time", "OFF_AT=17:30\n", f"{TUESDAY} 17:35", "off"),
-            ("custom on days include saturday", "ON_DAYS=6\n", f"{SATURDAY} 08:05", "on"),
-            ("held tonight", "HOLD_UNTIL=2026-11-17\n", f"{TUESDAY} 18:00", "skipped"),
-            ("held until a later day", "HOLD_UNTIL=2026-11-20\n", f"{TUESDAY} 19:00", "skipped"),
-            ("expired hold", "HOLD_UNTIL=2026-11-16\n", f"{TUESDAY} 18:00", "off"),
-            ("disabled", "OFF_ENABLED=false\n", f"{TUESDAY} 18:00", "skipped"),
-            ("malformed times fall back to defaults", "OFF_AT=6pm\n", f"{TUESDAY} 18:00", "off"),
-            ("injection ignored", "OFF_AT=$(touch /tmp/zs-pwned)\nHOLD_UNTIL=`id`\n", f"{TUESDAY} 18:00", "off"),
+            ("no files: defaults", None, None, f"{TUESDAY} 18:00", "off"),
+            ("the shipped dotfile", dotfile, None, f"{TUESDAY} 18:00", "off"),
+            ("before any slot", dotfile, None, f"{TUESDAY} 07:55", "nothing"),
+            ("on slot on a weekday", dotfile, None, f"{TUESDAY} 08:00", "on"),
+            ("no on slot at the weekend", dotfile, None, f"{SATURDAY} 08:00", "nothing"),
+            ("custom off time", "OFF_AT=17:30\n", None, f"{TUESDAY} 17:35", "off"),
+            ("custom on days include saturday", "ON_DAYS=6\n", None, f"{SATURDAY} 08:05", "on"),
+            ("held tonight", dotfile, "HOLD_UNTIL=2026-11-17\n", f"{TUESDAY} 18:00", "skipped"),
+            ("held until a later day", dotfile, "HOLD_UNTIL=2026-11-20\n", f"{TUESDAY} 19:00", "skipped"),
+            ("expired hold", dotfile, "HOLD_UNTIL=2026-11-16\n", f"{TUESDAY} 18:00", "off"),
+            ("a hold in the schedule file is ignored", "HOLD_UNTIL=2026-11-20\n", None, f"{TUESDAY} 18:00", "off"),
+            ("disabled", "OFF_ENABLED=false\n", None, f"{TUESDAY} 18:00", "skipped"),
+            ("malformed times fall back to defaults", "OFF_AT=6pm\n", None, f"{TUESDAY} 18:00", "off"),
+            ("injection ignored", "OFF_AT=$(touch /tmp/zs-pwned)\n", "HOLD_UNTIL=`id`\n", f"{TUESDAY} 18:00", "off"),
         ]
-        for name, content, now, expected in cases:
+        for name, schedule, hold, now, expected in cases:
             with self.subTest(name):
-                self.config.unlink(missing_ok=True)
+                for path, content in ((self.schedule_file, schedule), (self.hold_file, hold)):
+                    path.unlink(missing_ok=True)
+                    if content:
+                        path.write_text(content)
                 for f in Path(self.state.name).iterdir():
                     f.unlink()
-                if content:
-                    self.config.write_text(content)
                 self.assertEqual(self.outcome(self.schedule(now=now)), expected)
         self.assertFalse(Path("/tmp/zs-pwned").exists())
 
@@ -82,7 +87,7 @@ class ZscalerScheduleTests(unittest.TestCase):
         self.assertEqual(self.outcome(self.schedule(now=f"{TUESDAY} 08:45")), "nothing")
 
     def test_manual_actions(self):
-        self.config.write_text("OFF_ENABLED=false\n")
+        self.schedule_file.write_text("OFF_ENABLED=false\n")
         self.assertEqual(self.outcome(self.schedule("off")), "skipped")
         self.assertEqual(self.outcome(self.schedule("on")), "on")
 
@@ -97,8 +102,6 @@ class ZscalerScheduleTests(unittest.TestCase):
             (["tonight"], "held until 2026-11-17", "skipped"),
             (["2026-11-20"], "held until 2026-11-20", "skipped"),
             (["--release"], "runs tonight", "off"),
-            (["--never"], "disabled", "skipped"),
-            (["--resume"], "runs tonight", "off"),
         ]
         for args, status, expected in cases:
             with self.subTest(args):
@@ -109,23 +112,22 @@ class ZscalerScheduleTests(unittest.TestCase):
                     f.unlink()
                 self.assertEqual(self.outcome(self.schedule()), expected)
 
-    def test_hold_sets_times_without_dropping_other_keys(self):
+    def test_hold_never_touches_the_schedule_dotfile(self):
+        self.schedule_file.write_text("OFF_AT=17:30\n")
         self.hold("2026-11-20")
-        result = self.hold("--off-at", "17:30,21:00")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.hold("--on-at", "07:45")
-        self.hold("--on-days", "1,2,3,4")
-        self.assertEqual(
-            self.config.read_text().splitlines(),
-            ["OFF_AT=17:30,21:00", "ON_AT=07:45", "ON_DAYS=1,2,3,4", "HOLD_UNTIL=2026-11-20"],
-        )
-        self.assertIn("off at  17:30,21:00", self.hold("--status").stdout)
+        self.assertEqual(self.schedule_file.read_text(), "OFF_AT=17:30\n")
+        self.assertEqual(self.hold_file.read_text(), "HOLD_UNTIL=2026-11-20\n")
+        status = self.hold("--status").stdout
+        self.assertIn("off at  17:30", status)
+        self.assertIn("held until 2026-11-20", status)
+        self.hold("--release")
+        self.assertFalse(self.hold_file.exists())
 
     def test_hold_rejects_bad_input(self):
-        for args in (["next-friday"], ["--off-at", "6pm"], ["--on-at", "25:00"], ["--on-days", "0,8"], ["--off-at"]):
+        for args in (["next-friday"], ["--never"], ["--off-at", "18:00"]):
             with self.subTest(args):
                 self.assertEqual(self.hold(*args).returncode, 64)
-        self.assertFalse(self.config.exists())
+        self.assertFalse(self.hold_file.exists())
 
 
 if __name__ == "__main__":

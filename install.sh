@@ -111,6 +111,8 @@ ln -sf "$root/.config/alacritty/rose-pine.toml" ~/.config/alacritty/rose-pine.to
 ln -sf "$root/.config/nvim" ~/.config/nvim
 ln -sf "$root/.config/starship.toml" ~/.config/starship.toml
 ln -sf "$root/.config/jj/config.toml" ~/.config/jj/config.toml
+mkdir -p ~/.config/zscaler-schedule
+ln -sf "$root/.config/zscaler-schedule/schedule" ~/.config/zscaler-schedule/schedule
 ln -sfn "$root/.config/tmux/bar" ~/.config/tmux/bar
 ln -sf "$root/.config/btop/themes/catppuccin_mocha.theme" ~/.config/btop/themes/catppuccin_mocha.theme
 ln -sf "$root/.config/btop/themes/rose-pine.theme" ~/.config/btop/themes/rose-pine.theme
