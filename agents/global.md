@@ -21,14 +21,13 @@ Niels' pronouns are they/she/he, in that order of preference; default to they.
 - Clean code principles
 - Implicit returns
 - Guard clauses (early returns); in TS/JS always braces with the return on its own line, never single-line `if (!x) return;` (matches Biome `useBlockStatements`, required in all TS/JS projects)
-- Ternary operators for simple conditionals
+- Ternary operators for simple conditionals: one condition, two outcomes, one level deep
 - TDD
 - Keep files small and focused
 - Monorepo structure
 - Automation wherever possible
 - Group namespace imports aggressively, including NESTED group-use at the common prefix, not just per immediate namespace: `use App\Billing\{Contracts\InvoiceContract, Exceptions\NotConfigured, Ledger};`, `use Backend\{Classes\FormField, Models\User as BackendUser, Widgets\Form};`, TS `import { a, b } from "./x"`. Never single-item groups, aliases inside a group are fine, sort on the real path, use the multi-line brace form when a line runs long, and leave bare facade imports (`use App;`, `use Log;`) alone
 - After any import rewrite, diff the SET of fully-qualified imported names (with aliases) before and after per file; a sweep like this once dropped a `use Log;` and the suite stayed green because nothing exercised that path. The set comparison is the guard, not the test run
-- Docblocks on test classes: three lines of body, maximum. If the why doesn't fit, it's narrating rather than explaining
 - Match the file-header convention the project already has (PHP: `<?php` + blank line + `namespace`, or October's same-line form) instead of importing one. Count the existing files before changing any; never introduce `declare(strict_types=1)` into a codebase that has none
 
 ### Data modelling
@@ -58,15 +57,20 @@ Sources: [Parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/p
 
 ### Comments
 
-Default: no comment at all. Write one only when ALL hold: the WHY is non-obvious (hidden constraint, subtle invariant, workaround, surprising behaviour); a reader without this context would misread or break the code; one line is enough.
+Default: no comment at all. Write one only when the WHY is non-obvious (hidden constraint, subtle invariant, workaround, surprising behaviour) and a reader without that context would misread or break the code.
 
-Never explain WHAT the code does (names and small functions handle that). Never reference the current task, PR, or callers ("used by X", "fixes #123"); that context belongs in the commit message or ticket. No multi-line comment blocks, ever: a second comment line means rewrite as one line, rename something, or delete. Docblocks on EXPORTED functions/classes are the only exception.
-
-If you feel the need to add to existing comments, try to keep it compact, preferably under 3 lines
+- Never explain WHAT the code does; names and small functions handle that. Never reference the current task, PR, or callers ("used by X", "fixes #123"); that context belongs in the commit message or ticket
+- Keep it brief: one to three sentences, inline or docblock alike. Needing more means it is narrating: rename, split, or move it to the commit message
+- Block comments and docblocks are fine, with the delimiters on their own lines (`/**`, ` * text`, ` */`); never squeeze one onto a single line as `/* text */` or `/** text */`. A short `//` or `#` line comment stays fine
+- Type annotations only where they add what the language can't express: PHPStan/Psalm generics and array shapes (`Collection<int, Customer>`, `array{id: int, name: string}`), `@template`, a `@throws` worth knowing. Never restate a native type (`@param string $name` next to `string $name`)
+- Docblocks on test classes: three lines of body, maximum
+- When adding to an existing comment, the whole comment stays within the same limit
+- A language's firm doc convention wins where it disagrees (Python docstrings per PEP 257, Rust and C# `///` doc comments)
 
 ### Avoid
 
 - if/else blocks (use guard clauses or ternaries)
+- Nested or chained ternaries (`a ? x : b ? y : z`): the if/else ban is not a licence to rebuild it as one expression. Three or more outcomes go to guard clauses in a small named function, an object map, or `match` on a union
 - switch statements (use object maps or pattern matching); for discriminated unions, the `match` helper in Data modelling keeps exhaustiveness without the statement form
 - for loops (use map, filter, reduce, forEach)
 - Scope: these are TS/JS-first rules. Where another language's idiom disagrees (foreach in PHP, switch expressions in C#, case in Gleam), the language's idiom wins
