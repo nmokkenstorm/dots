@@ -1,12 +1,12 @@
 #!/bin/bash
-# Install the Zscaler schedule: a root-owned script plus two launchd jobs.
+# Install the Zscaler schedule: a root-owned script and one launchd job.
 #
 #   sudo macos/zscaler-schedule/install            install or update
-#   sudo macos/zscaler-schedule/install --remove   unload and delete both jobs
+#   sudo macos/zscaler-schedule/install --remove   unload and delete the job and its state
 #
-# Replaces earlier hand-written dev.mokkenstorm.zscaler-{off,on} jobs. Switch-off
-# runs at 18:00 to 21:00 hourly, switch-on at 08:00 on weekdays; per-night control
-# lives in ~/.config/zscaler-schedule/config (see bin/zscaler-hold).
+# One job ticks every 5 minutes; the times live in ~/.config/zscaler-schedule/config
+# (see bin/zscaler-hold), so changing them needs no sudo. Replaces the earlier
+# dev.mokkenstorm.zscaler-{off,on} calendar jobs.
 
 set -euo pipefail
 
@@ -19,50 +19,39 @@ config_dir="$home/.config/zscaler-schedule"
 src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bin=/usr/local/libexec/zscaler-schedule
 daemons=/Library/LaunchDaemons
+label=dev.mokkenstorm.zscaler-schedule
+state=/var/db/zscaler-schedule
 
 unload() {
   launchctl bootout "system/$1" 2>/dev/null || true
 }
 
 if [[ "${1:-}" == --remove ]]; then
-  for job in off on; do
+  for job in off on schedule; do
     unload "dev.mokkenstorm.zscaler-$job"
     rm -f "$daemons/dev.mokkenstorm.zscaler-$job.plist"
   done
-  rm -f "$bin"
+  rm -rf "$bin" "$state"
   echo "removed"
   exit 0
 fi
 
 install -d -o root -g wheel -m 755 /usr/local/libexec
 install -o root -g wheel -m 755 "$src/zscaler-schedule" "$bin"
-
-calendar() {
-  local entry
-  for entry in "$@"; do
-    local hour="${entry%%:*}" weekday="${entry#*:}"
-    echo "    <dict><key>Hour</key><integer>$hour</integer><key>Minute</key><integer>0</integer>"
-    [[ "$weekday" != "$entry" ]] && echo "      <key>Weekday</key><integer>$weekday</integer>"
-    echo "    </dict>"
-  done
-}
+install -d -o root -g wheel -m 755 "$state"
 
 plist() {
-  local job="$1"; shift
   cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>dev.mokkenstorm.zscaler-$job</string>
+  <key>Label</key><string>$label</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$bin</string><string>$job</string><string>$config_dir</string><string>$uid</string>
+    <string>$bin</string><string>tick</string><string>$config_dir</string><string>$uid</string>
   </array>
-  <key>StartCalendarInterval</key>
-  <array>
-$(calendar "$@")
-  </array>
+  <key>StartInterval</key><integer>300</integer>
   <key>StandardOutPath</key><string>/var/log/zscaler-schedule.log</string>
   <key>StandardErrorPath</key><string>/var/log/zscaler-schedule.log</string>
 </dict>
@@ -70,20 +59,18 @@ $(calendar "$@")
 EOF
 }
 
-write_job() {
-  local job="$1"; shift
-  local target="$daemons/dev.mokkenstorm.zscaler-$job.plist"
-  plist "$job" "$@" >"$target.new"
-  plutil -lint "$target.new" >/dev/null
-  chown root:wheel "$target.new"
-  chmod 644 "$target.new"
+target="$daemons/$label.plist"
+plist >"$target.new"
+plutil -lint "$target.new" >/dev/null
+chown root:wheel "$target.new"
+chmod 644 "$target.new"
+for job in off on; do
   unload "dev.mokkenstorm.zscaler-$job"
-  mv "$target.new" "$target"
-  launchctl bootstrap system "$target"
-}
-
-write_job off 18 19 20 21
-write_job on 8:1 8:2 8:3 8:4 8:5
+  rm -f "$daemons/dev.mokkenstorm.zscaler-$job.plist"
+done
+unload "$label"
+mv "$target.new" "$target"
+launchctl bootstrap system "$target"
 
 sudo -u "$user" mkdir -p "$config_dir"
 echo "installed $bin; config read from $config_dir/config"
