@@ -184,8 +184,11 @@ zscaler-hold --release
 zscaler-hold --status
 ```
 
-Each tick runs the latest slot of the day that is due and not yet done, so a
-slot missed while the laptop slept runs once on wake. A hold only stops the
-switch-off; once Zscaler is off, the next on slot or
+Each tick runs the latest slot after the previous tick and at or before now,
+so a slot missed while the laptop slept runs once on wake, while a fresh install
+or an edit that moves a slot into the past never fires it. Lines may carry
+spaces, CRLF endings or a trailing `# comment`; an invalid list falls back to
+the defaults, and `zscaler-hold --status` shows what the job will actually use.
+A hold only stops the switch-off; once Zscaler is off, the next on slot or
 `sudo /usr/local/libexec/zscaler-schedule on ~/.config/zscaler-schedule $(id -u)`
 brings it back.
