@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Keep Zscaler on past the evening switch-off, without sudo.
+#
+#   zscaler-hold             hold tonight
+#   zscaler-hold 2026-11-20  hold up to and including that day
+#   zscaler-hold --release   let tonight's switch-off run again
+#   zscaler-hold --never     disable the switch-off   (--resume undoes it)
+#   zscaler-hold --status    show what tonight's run will do
+#
+# Writes ~/.config/zscaler-schedule/config, which the root-owned zscaler-schedule
+# job reads as data. It does not start Zscaler; once switched off, use the
+# morning job or `sudo zscaler-schedule on`.
+
+set -euo pipefail
+
+dir="${ZSCALER_SCHEDULE_CONFIG:-$HOME/.config/zscaler-schedule}"
+config="$dir/config"
+today="${ZSCALER_SCHEDULE_TODAY:-$(date +%F)}"
+
+current() {
+  [[ -f "$config" ]] || return 0
+  grep -E "^$1=" "$config" | tail -n 1 | cut -d= -f2- || true
+}
+
+write() {
+  local enabled="$1" hold="$2"
+  mkdir -p "$dir"
+  {
+    echo "OFF_ENABLED=$enabled"
+    [[ -z "$hold" ]] || echo "HOLD_UNTIL=$hold"
+  } >"$config.tmp"
+  mv "$config.tmp" "$config"
+}
+
+enabled="$(current OFF_ENABLED)"
+enabled="${enabled:-true}"
+hold="$(current HOLD_UNTIL)"
+
+status() {
+  [[ "$enabled" == false ]] && { echo "switch-off disabled (zscaler-hold --resume to re-enable)"; return; }
+  [[ -n "$hold" && ! "$hold" < "$today" ]] && { echo "switch-off held until $hold"; return; }
+  echo "switch-off runs tonight"
+}
+
+case "${1:-tonight}" in
+  tonight) write "$enabled" "$today" ;;
+  --release) write "$enabled" "" ;;
+  --never) write false "$hold" ;;
+  --resume) write true "$hold" ;;
+  --status) status; exit 0 ;;
+  -h | --help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *)
+    [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "not a date (YYYY-MM-DD): $1" >&2; exit 64; }
+    write "$enabled" "$1"
+    ;;
+esac
+
+enabled="$(current OFF_ENABLED)"
+hold="$(current HOLD_UNTIL)"
+status

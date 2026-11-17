@@ -1,0 +1,86 @@
+#!/bin/bash
+# Evening switch-off and morning switch-on for Zscaler, run as root by launchd.
+#
+#   zscaler-schedule off <config-dir> <uid>
+#   zscaler-schedule on  <config-dir> <uid>
+#
+# Installed root-owned into /usr/local/libexec by install.sh. The config file in
+# <config-dir> is read as data only: root never sources or executes anything from
+# a user-writable path, or editing ~/.config would be a way to run code as root.
+#
+#   OFF_ENABLED=false       never switch off
+#   HOLD_UNTIL=2026-11-17   skip the switch-off up to and including that day
+#
+# ZSCALER_SCHEDULE_DRY=1 prints the commands instead of running them.
+
+set -uo pipefail
+
+action="${1:-}"
+config_dir="${2:-}"
+uid="${3:-}"
+
+usage() {
+  echo "usage: zscaler-schedule off|on <config-dir> <uid>" >&2
+  exit 64
+}
+
+[[ "$action" == off || "$action" == on ]] || usage
+[[ -n "$config_dir" && "$uid" =~ ^[0-9]+$ ]] || usage
+
+config="$config_dir/config"
+today="${ZSCALER_SCHEDULE_TODAY:-$(date +%F)}"
+
+log() { echo "$(date '+%F %T') $action: $*"; }
+
+run() {
+  [[ "${ZSCALER_SCHEDULE_DRY:-}" == 1 ]] && { echo "would run: $*"; return 0; }
+  "$@"
+}
+
+# Only exact KEY=value lines with a whitelisted key and a value of safe characters
+# count; anything else in the file is ignored.
+setting() {
+  local key="$1"
+  [[ -f "$config" ]] || return 0
+  grep -E "^${key}=[A-Za-z0-9_.-]*$" "$config" | tail -n 1 | cut -d= -f2-
+}
+
+skip_reason() {
+  local enabled hold
+  enabled="$(setting OFF_ENABLED)"
+  [[ "$enabled" == false ]] && { echo "OFF_ENABLED=false"; return; }
+  hold="$(setting HOLD_UNTIL)"
+  [[ "$hold" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && ! "$hold" < "$today" ]] && echo "held until $hold"
+}
+
+switch_off() {
+  local reason
+  reason="$(skip_reason)"
+  [[ -n "$reason" ]] && { log "skipped, $reason"; return 0; }
+  log "switching off"
+  run launchctl bootout "gui/$uid/com.zscaler.tray"
+  for daemon in tunnel service UPMServiceController; do
+    run launchctl bootout "system/com.zscaler.$daemon"
+  done
+  run pkill -9 -f /Applications/Zscaler/
+  for key in DNS IPv4 IPv6; do
+    [[ "${ZSCALER_SCHEDULE_DRY:-}" == 1 ]] && { echo "would run: scutil remove $key"; continue; }
+    echo "remove State:/Network/Service/com.zscaler.tunnel/$key" | scutil
+  done
+  run dscacheutil -flushcache
+  run killall -HUP mDNSResponder
+}
+
+switch_on() {
+  log "switching on"
+  for daemon in UPMServiceController service tunnel; do
+    run launchctl bootstrap system "/Library/LaunchDaemons/com.zscaler.$daemon.plist"
+  done
+  run launchctl bootstrap "gui/$uid" /Library/LaunchAgents/com.zscaler.tray.plist
+}
+
+# A daemon that is already loaded or already gone makes launchctl fail; that is
+# the desired state either way, so the job always exits 0.
+[[ "$action" == off ]] && switch_off
+[[ "$action" == on ]] && switch_on
+exit 0

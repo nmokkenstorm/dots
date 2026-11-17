@@ -132,6 +132,7 @@ ln -sf "$root/bin/throb" ~/.local/bin/throb
 ln -sf "$root/bin/train" ~/.local/bin/train
 ln -sf "$root/bin/glab-merge" ~/.local/bin/glab-merge
 ln -sf "$root/bin/codex-wt" ~/.local/bin/codex-wt
+ln -sf "$root/bin/zscaler-hold" ~/.local/bin/zscaler-hold
 ln -sf "$root/bin/codex-watch" ~/.local/bin/codex-watch
 ln -sf "$root/bin/agents-md" ~/.local/bin/agents-md
 ln -sf "$root/bin/transcribe-call" ~/.local/bin/transcribe-call
