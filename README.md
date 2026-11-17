@@ -151,23 +151,24 @@ train ls
 ## Zscaler schedule
 
 A root launchd job ticks every 5 minutes and switches Zscaler off in the evening
-and on in the morning. It runs a root-owned copy of
-`macos/zscaler-schedule/zscaler-schedule`, installed once with:
+and on in the morning. The times are a dotfile,
+`.config/zscaler-schedule/schedule`, symlinked into `~/.config` by `install.sh`:
+edit it and the next tick picks it up, no sudo.
+
+The job runs a root-owned copy of `macos/zscaler-schedule/zscaler-schedule`,
+installed once with:
 
 ```sh
 sudo macos/zscaler-schedule/install            # --remove to uninstall
 ```
 
-The times and holds live in `~/.config/zscaler-schedule/config`, which the root
-job reads as data, never as code, so changing them needs no sudo:
+Root reads the dotfile as data, never as code. A per-night exception is
+`zscaler-hold`, which writes `~/.config/zscaler-schedule/hold`, outside git:
 
 ```sh
-zscaler-hold                       # keep Zscaler on tonight
-zscaler-hold 2026-11-20            # keep it on up to and including that day
-zscaler-hold --never               # disable the switch-off (--resume undoes it)
-zscaler-hold --off-at 18:30,20:00  # default 18:00,19:00,20:00,21:00
-zscaler-hold --on-at 07:45         # default 08:00
-zscaler-hold --on-days 1,2,3,4,5   # ISO weekdays, 1 = Monday
+zscaler-hold              # keep Zscaler on tonight
+zscaler-hold 2026-11-20   # keep it on up to and including that day
+zscaler-hold --release
 zscaler-hold --status
 ```
 

@@ -1,81 +1,58 @@
 #!/usr/bin/env bash
-# Control the Zscaler schedule without sudo.
+# Keep Zscaler on past the evening switch-off, without sudo.
 #
-#   zscaler-hold                      hold tonight (skip the switch-off)
-#   zscaler-hold 2026-11-20           hold up to and including that day
-#   zscaler-hold --release            drop the hold
-#   zscaler-hold --never | --resume   disable or re-enable the switch-off
-#   zscaler-hold --off-at 18:30,20:00 switch-off times
-#   zscaler-hold --on-at 07:45        switch-on times
-#   zscaler-hold --on-days 1,2,3,4,5  ISO weekdays for the switch-on (1 = Monday)
-#   zscaler-hold --status             show the schedule and what is next
+#   zscaler-hold              hold tonight
+#   zscaler-hold 2026-11-20   hold up to and including that day
+#   zscaler-hold --release    drop the hold
+#   zscaler-hold --status     show the schedule and tonight's switch-off
 #
-# Writes ~/.config/zscaler-schedule/config, which the root-owned zscaler-schedule
-# job reads as data on every 5-minute tick. A hold does not start Zscaler; once
-# switched off, the morning slot or `sudo zscaler-schedule on` brings it back.
+# The times live in the schedule dotfile (dots .config/zscaler-schedule/schedule);
+# this only writes ~/.config/zscaler-schedule/hold, which stays out of git. A hold
+# does not start Zscaler; once switched off, the next on slot or
+# `sudo zscaler-schedule on` brings it back.
 
 set -euo pipefail
 
 dir="${ZSCALER_SCHEDULE_CONFIG:-$HOME/.config/zscaler-schedule}"
-config="$dir/config"
+schedule="$dir/schedule"
+hold_file="$dir/hold"
 today="${ZSCALER_SCHEDULE_TODAY:-$(date +%F)}"
-keys=(OFF_AT ON_AT ON_DAYS OFF_ENABLED HOLD_UNTIL)
 
 get() {
-  [[ -f "$config" ]] || return 0
-  grep -E "^$1=" "$config" | tail -n 1 | cut -d= -f2- || true
+  [[ -f "$1" ]] || return 0
+  grep -E "^$2=" "$1" | tail -n 1 | cut -d= -f2- || true
 }
 
-# Rewrites the file from the known keys, so a value set by hand in the wrong
-# shape never lingers next to a corrected one.
-set_key() {
-  local key="$1" value="$2" k v
+set_hold() {
   mkdir -p "$dir"
-  for k in "${keys[@]}"; do
-    v="$(get "$k")"
-    [[ "$k" == "$key" ]] && v="$value"
-    [[ -z "$v" ]] || echo "$k=$v"
-  done >"$config.tmp"
-  mv "$config.tmp" "$config"
-}
-
-valid_times() {
-  [[ "$1" =~ ^(([01][0-9]|2[0-3]):[0-5][0-9])(,([01][0-9]|2[0-3]):[0-5][0-9])*$ ]] ||
-    { echo "times must be HH:MM[,HH:MM...], got: $1" >&2; exit 64; }
-}
-
-valid_days() {
-  [[ "$1" =~ ^[1-7](,[1-7])*$ ]] || { echo "days must be 1-7[,1-7...] (1 = Monday), got: $1" >&2; exit 64; }
+  [[ -z "$1" ]] && { rm -f "$hold_file"; return; }
+  echo "HOLD_UNTIL=$1" >"$hold_file.tmp"
+  mv "$hold_file.tmp" "$hold_file"
 }
 
 status() {
-  local enabled hold off on days
-  enabled="$(get OFF_ENABLED)"
-  hold="$(get HOLD_UNTIL)"
-  off="$(get OFF_AT)"
-  on="$(get ON_AT)"
-  days="$(get ON_DAYS)"
+  local off on days enabled hold
+  off="$(get "$schedule" OFF_AT)"
+  on="$(get "$schedule" ON_AT)"
+  days="$(get "$schedule" ON_DAYS)"
+  enabled="$(get "$schedule" OFF_ENABLED)"
+  hold="$(get "$hold_file" HOLD_UNTIL)"
   echo "off at  ${off:-18:00,19:00,20:00,21:00}"
   echo "on at   ${on:-08:00} on days ${days:-1,2,3,4,5}"
-  [[ "$enabled" == false ]] && { echo "switch-off disabled (zscaler-hold --resume to re-enable)"; return; }
+  [[ "$enabled" == false ]] && { echo "switch-off disabled in $schedule"; return; }
   [[ -n "$hold" && ! "$hold" < "$today" ]] && { echo "switch-off held until $hold"; return; }
   echo "switch-off runs tonight"
 }
 
 arg="${1:-tonight}"
 case "$arg" in
-  tonight) set_key HOLD_UNTIL "$today" ;;
-  --release) set_key HOLD_UNTIL "" ;;
-  --never) set_key OFF_ENABLED false ;;
-  --resume) set_key OFF_ENABLED "" ;;
-  --off-at) valid_times "${2:-}"; set_key OFF_AT "$2" ;;
-  --on-at) valid_times "${2:-}"; set_key ON_AT "$2" ;;
-  --on-days) valid_days "${2:-}"; set_key ON_DAYS "$2" ;;
+  tonight) set_hold "$today" ;;
+  --release) set_hold "" ;;
   --status) ;;
-  -h | --help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *)
     [[ "$arg" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "not a date (YYYY-MM-DD) or option: $arg" >&2; exit 64; }
-    set_key HOLD_UNTIL "$arg"
+    set_hold "$arg"
     ;;
 esac
 
