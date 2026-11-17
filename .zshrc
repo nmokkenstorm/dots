@@ -284,3 +284,6 @@ eval "$(/opt/homebrew/bin/mise activate zsh)"
 
 # fnox: per-directory secrets from 1Password; after mise so the shim is on PATH
 eval "$(fnox activate zsh)"
+
+# Client-specific shell config, kept out of this public repo
+[[ -r ~/.config/dots-private/zshrc ]] && source ~/.config/dots-private/zshrc

@@ -63,6 +63,9 @@
 [http]
 	sslCAInfo = /Users/niels/.zcli/zscaler_root.pem
 
+# Client-specific identities; git skips a missing include
+[include]
+	path = ~/.config/dots-private/gitconfig
 [credential "https://github.com"]
 	helper = 
 	helper = !/opt/homebrew/bin/gh auth git-credential

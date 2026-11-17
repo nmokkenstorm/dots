@@ -3,3 +3,6 @@
 
 # macOS
 .DS_Store
+
+# Private, linked in from ~/.config/dots-private by install.sh
+.config/tmux/bar/repos

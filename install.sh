@@ -135,6 +135,18 @@ ln -sf "$root/bin/agents-md" ~/.local/bin/agents-md
 ln -sf "$root/bin/transcribe-call" ~/.local/bin/transcribe-call
 ln -sf "$root/bin/call-devices" ~/.local/bin/call-devices
 
+# Client-specific config lives outside this public repo, in ~/.config/dots-private
+private=~/.config/dots-private
+if [ -d "$private" ]; then
+    echo "Linking private overlay..."
+    mkdir -p ~/.config/jj/conf.d
+    ln -sf "$private/jj.toml" ~/.config/jj/conf.d/private.toml
+    ln -sf "$private/1password-agent.toml" ~/.config/1Password/ssh/agent.toml
+    ln -sf "$private/tmux-bar-repos" "$root/.config/tmux/bar/repos"
+else
+    echo "No $private; skipping client identities, 1Password SSH agent config and PR bar repos"
+fi
+
 # Global agent instructions: one generated file shared by Claude Code and Codex
 echo "Building global agent instructions..."
 mkdir -p ~/.codex
