@@ -1,0 +1,185 @@
+#!/bin/bash
+# Evening switch-off and morning switch-on for Zscaler, run as root by launchd.
+#
+#   zscaler-schedule tick   <config-dir> <uid>   run a slot that came due since the last tick
+#   zscaler-schedule off    <config-dir> <uid>   switch off now, unless held or disabled
+#   zscaler-schedule on     <config-dir> <uid>   switch on now
+#   zscaler-schedule status <config-dir> <uid>   print the settings in effect; changes nothing
+#
+# Installed root-owned into /usr/local/libexec by install. Two files in
+# <config-dir> are read as data only: root never sources or executes anything from
+# a user-writable path, or editing ~/.config would be a way to run code as root.
+#
+#   schedule  OFF_AT, ON_AT, ON_DAYS, OFF_ENABLED (the dotfile, see that file)
+#   hold      HOLD_UNTIL=2026-11-17, written by zscaler-hold: skip the switch-off
+#             up to and including that day
+#
+# A tick runs the latest slot after the previous tick and at or before now, so a
+# slot missed while asleep runs once on wake, while a fresh install or a schedule
+# edit never fires a slot that was already in the past. A slot skipped by a hold
+# still counts as passed. The watermark lives in a root-owned state directory.
+#
+# ZSCALER_SCHEDULE_DRY=1 prints the commands instead of running them;
+# ZSCALER_SCHEDULE_NOW="YYYY-MM-DD HH:MM" and ZSCALER_SCHEDULE_STATE override the
+# clock and the state directory for tests.
+
+set -uo pipefail
+
+action="${1:-}"
+config_dir="${2:-}"
+uid="${3:-}"
+
+usage() {
+  echo "usage: zscaler-schedule tick|off|on|status <config-dir> <uid>" >&2
+  exit 64
+}
+
+[[ "$action" =~ ^(tick|off|on|status)$ ]] || usage
+[[ -n "$config_dir" && "$uid" =~ ^[0-9]+$ ]] || usage
+
+schedule="$config_dir/schedule"
+hold_file="$config_dir/hold"
+state="${ZSCALER_SCHEDULE_STATE:-/var/db/zscaler-schedule}"
+watermark="$state/last-tick"
+now="${ZSCALER_SCHEDULE_NOW:-$(date '+%Y-%m-%d %H:%M')}"
+today="${now%% *}"
+clock="${now##* }"
+weekday="$(date -j -f %Y-%m-%d "$today" +%u)"
+
+log() { echo "$now $*"; }
+
+run() {
+  [[ "${ZSCALER_SCHEDULE_DRY:-}" == 1 ]] && { echo "would run: $*"; return 0; }
+  "$@"
+}
+
+# The last KEY=value line for key, with carriage returns, whitespace and a trailing
+# "# comment" removed; values never contain spaces. A value with anything but safe
+# characters is ignored and the fallback is used.
+setting() {
+  local file="$1" key="$2" fallback="$3" value=""
+  [[ -f "$file" ]] && value="$(tr -d '\r' <"$file" | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]//g' |
+    grep -E "^${key}=[A-Za-z0-9_.,:-]*$" | tail -n 1 | cut -d= -f2-)"
+  echo "${value:-$fallback}"
+}
+
+# Valid HH:MM entries of a comma list, sorted, one per line. A list with no valid
+# entry falls back to the default: an empty off list would leave the morning slot
+# as the only one, so an evening tick would switch Zscaler on.
+times() {
+  local valid
+  valid="$(echo "$1" | tr ',' '\n' | grep -E '^([01][0-9]|2[0-3]):[0-5][0-9]$' | sort -u)"
+  [[ -n "$valid" ]] && { echo "$valid"; return; }
+  echo "$2" | tr ',' '\n'
+}
+
+# ISO weekday numbers of a comma list of 1-7 or mon..sun (any case), one per line.
+# A list with no valid entry falls back to the default, like times.
+days() {
+  local valid
+  valid="$(echo "$1" | tr 'A-Z,' 'a-z\n' | sed -e 's/^mon$/1/' -e 's/^tue$/2/' -e 's/^wed$/3/' \
+    -e 's/^thu$/4/' -e 's/^fri$/5/' -e 's/^sat$/6/' -e 's/^sun$/7/' | grep -E '^[1-7]$' | sort -u)"
+  [[ -n "$valid" ]] && { echo "$valid"; return; }
+  echo "$2" | tr ',' '\n'
+}
+
+off_times() { times "$(setting "$schedule" OFF_AT "")" 18:00,19:00,20:00,21:00; }
+on_times() { times "$(setting "$schedule" ON_AT "")" 08:00; }
+on_days() { days "$(setting "$schedule" ON_DAYS "")" 1,2,3,4,5; }
+
+hold_until() {
+  local hold
+  hold="$(setting "$hold_file" HOLD_UNTIL "")"
+  [[ "$hold" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && echo "$hold"
+}
+
+skip_reason() {
+  [[ "$(setting "$schedule" OFF_ENABLED true)" == false ]] && { echo "OFF_ENABLED=false"; return; }
+  local hold
+  hold="$(hold_until)"
+  [[ -n "$hold" && ! "$hold" < "$today" ]] && echo "held until $hold"
+}
+
+switch_off() {
+  local reason
+  reason="$(skip_reason)"
+  [[ -n "$reason" ]] && { log "off skipped, $reason"; return 0; }
+  log "switching off"
+  run launchctl bootout "gui/$uid/com.zscaler.tray"
+  for daemon in tunnel service UPMServiceController; do
+    run launchctl bootout "system/com.zscaler.$daemon"
+  done
+  run pkill -9 -f /Applications/Zscaler/
+  for key in DNS IPv4 IPv6; do
+    [[ "${ZSCALER_SCHEDULE_DRY:-}" == 1 ]] && { echo "would run: scutil remove $key"; continue; }
+    echo "remove State:/Network/Service/com.zscaler.tunnel/$key" | scutil
+  done
+  run dscacheutil -flushcache
+  run killall -HUP mDNSResponder
+}
+
+switch_on() {
+  log "switching on"
+  for daemon in UPMServiceController service tunnel; do
+    run launchctl bootstrap system "/Library/LaunchDaemons/com.zscaler.$daemon.plist"
+  done
+  run launchctl bootstrap "gui/$uid" /Library/LaunchAgents/com.zscaler.tray.plist
+}
+
+# Today's slots as "HH:MM action", sorted; on slots only on an on day.
+slots() {
+  {
+    off_times | sed 's/$/ off/'
+    on_days | grep -qx "$weekday" && on_times | sed 's/$/ on/'
+  } | sort
+}
+
+# The latest slot in (after, now], or nothing.
+due_slot() {
+  slots | awk -v after="$1" -v now="$clock" '$1 > after && $1 <= now { slot = $0 } END { print slot }'
+}
+
+# The previous tick's time of day if it was today; a tick on an earlier day means
+# every slot of today is still ahead of it.
+last_tick() {
+  local last
+  last="$(cat "$watermark" 2>/dev/null || true)"
+  [[ "$last" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}$ ]] || return 1
+  [[ "${last%% *}" < "$today" ]] && { echo "--:--"; return 0; }
+  [[ "${last%% *}" == "$today" ]] || return 1
+  echo "${last##* }"
+}
+
+tick() {
+  local after slot
+  mkdir -p "$state"
+  # No usable watermark (fresh install, lost state, clock moved back): start from
+  # now instead of firing whatever slot already passed today.
+  after="$(last_tick)" || after="$clock"
+  slot="$(due_slot "$after")"
+  [[ "${slot##* }" == off ]] && switch_off
+  [[ "${slot##* }" == on ]] && switch_on
+  # Written after the action, so a tick killed halfway retries; both actions are
+  # safe to repeat.
+  echo "$now" >"$watermark"
+}
+
+status() {
+  local enabled hold next
+  enabled="$(setting "$schedule" OFF_ENABLED true)"
+  hold="$(hold_until)"
+  next="$(slots | awk -v now="$clock" '$1 > now { print; exit }')"
+  echo "off at  $(off_times | paste -sd, -)"
+  echo "on at   $(on_times | paste -sd, -) on days $(on_days | paste -sd, -) (1 = Monday)"
+  [[ "$enabled" == false ]] && echo "switch-off disabled in $schedule"
+  [[ "$enabled" != false && -n "$hold" && ! "$hold" < "$today" ]] && echo "switch-off held until $hold"
+  echo "next    ${next:-nothing more today}"
+}
+
+# A daemon that is already loaded or already gone makes launchctl fail; that is
+# the desired state either way, so the job always exits 0.
+[[ "$action" == tick ]] && tick
+[[ "$action" == off ]] && switch_off
+[[ "$action" == on ]] && switch_on
+[[ "$action" == status ]] && status
+exit 0

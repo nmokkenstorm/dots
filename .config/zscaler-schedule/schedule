@@ -1,0 +1,10 @@
+# Zscaler schedule, read every 5 minutes by the root zscaler-schedule job.
+# Only KEY=value lines count; times are HH:MM, days are mon..sun or 1-7 (1 = Monday).
+# Repeated off times re-kill a client that was started again by hand.
+
+OFF_AT=18:00,19:00,20:00,21:00
+ON_AT=08:00
+ON_DAYS=mon,tue,wed,thu,fri
+
+# false disables the switch-off entirely; a per-night hold is `zscaler-hold`.
+OFF_ENABLED=true

@@ -111,6 +111,8 @@ ln -sf "$root/.config/alacritty/rose-pine.toml" ~/.config/alacritty/rose-pine.to
 ln -sf "$root/.config/nvim" ~/.config/nvim
 ln -sf "$root/.config/starship.toml" ~/.config/starship.toml
 ln -sf "$root/.config/jj/config.toml" ~/.config/jj/config.toml
+mkdir -p ~/.config/zscaler-schedule
+ln -sf "$root/.config/zscaler-schedule/schedule" ~/.config/zscaler-schedule/schedule
 ln -sfn "$root/.config/tmux/bar" ~/.config/tmux/bar
 ln -sf "$root/.config/btop/themes/catppuccin_mocha.theme" ~/.config/btop/themes/catppuccin_mocha.theme
 ln -sf "$root/.config/btop/themes/rose-pine.theme" ~/.config/btop/themes/rose-pine.theme
@@ -130,6 +132,7 @@ ln -sf "$root/bin/throb" ~/.local/bin/throb
 ln -sf "$root/bin/train" ~/.local/bin/train
 ln -sf "$root/bin/glab-merge" ~/.local/bin/glab-merge
 ln -sf "$root/bin/codex-wt" ~/.local/bin/codex-wt
+ln -sf "$root/bin/zscaler-hold" ~/.local/bin/zscaler-hold
 ln -sf "$root/bin/codex-watch" ~/.local/bin/codex-watch
 ln -sf "$root/bin/agents-md" ~/.local/bin/agents-md
 ln -sf "$root/bin/transcribe-call" ~/.local/bin/transcribe-call

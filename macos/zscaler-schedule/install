@@ -1,0 +1,81 @@
+#!/bin/bash
+# Install the Zscaler schedule: a root-owned script and one launchd job.
+#
+#   sudo macos/zscaler-schedule/install            install or update
+#   sudo macos/zscaler-schedule/install --remove   unload and delete the job and its state
+#
+# One job ticks every 5 minutes; the times live in the schedule dotfile
+# (~/.config/zscaler-schedule/schedule) and holds in its hold file (see
+# bin/zscaler-hold), so changing them needs no sudo. Replaces the earlier
+# dev.mokkenstorm.zscaler-{off,on} calendar jobs.
+
+set -euo pipefail
+
+[[ "$(id -u)" == 0 ]] || { echo "run with sudo" >&2; exit 77; }
+
+user="${SUDO_USER:?run with sudo from your own account}"
+uid="$(id -u "$user")"
+home="$(dscl -plist . -read "/Users/$user" NFSHomeDirectory | plutil -extract dsAttrTypeStandard:NFSHomeDirectory.0 raw -)"
+config_dir="$home/.config/zscaler-schedule"
+src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bin=/usr/local/libexec/zscaler-schedule
+daemons=/Library/LaunchDaemons
+label=dev.mokkenstorm.zscaler-schedule
+state=/var/db/zscaler-schedule
+
+unload() {
+  launchctl bootout "system/$1" 2>/dev/null || true
+}
+
+if [[ "${1:-}" == --remove ]]; then
+  for job in off on schedule; do
+    unload "dev.mokkenstorm.zscaler-$job"
+    rm -f "$daemons/dev.mokkenstorm.zscaler-$job.plist"
+  done
+  rm -rf "$bin" "$state"
+  rm -f /var/log/zscaler-schedule.log
+  echo "removed"
+  exit 0
+fi
+
+install -d -o root -g wheel -m 755 /usr/local/libexec
+install -o root -g wheel -m 755 "$src/zscaler-schedule" "$bin"
+install -d -o root -g wheel -m 755 "$state"
+
+xml() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' <<<"$1"; }
+
+plist() {
+  cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$bin</string><string>tick</string><string>$(xml "$config_dir")</string><string>$uid</string>
+  </array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>StandardOutPath</key><string>/var/log/zscaler-schedule.log</string>
+  <key>StandardErrorPath</key><string>/var/log/zscaler-schedule.log</string>
+</dict>
+</plist>
+EOF
+}
+
+target="$daemons/$label.plist"
+trap 'rm -f "$target.new"' EXIT
+plist >"$target.new"
+plutil -lint "$target.new" >/dev/null
+chown root:wheel "$target.new"
+chmod 644 "$target.new"
+for job in off on; do
+  unload "dev.mokkenstorm.zscaler-$job"
+  rm -f "$daemons/dev.mokkenstorm.zscaler-$job.plist"
+done
+unload "$label"
+mv "$target.new" "$target"
+launchctl bootstrap system "$target"
+
+sudo -u "$user" mkdir -p "$config_dir"
+echo "installed $bin; schedule read from $config_dir/schedule, holds from $config_dir/hold"

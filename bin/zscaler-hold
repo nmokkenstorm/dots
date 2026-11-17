@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Keep Zscaler on past the evening switch-off, without sudo.
+#
+#   zscaler-hold              hold tonight
+#   zscaler-hold 2026-11-20   hold up to and including that day (at most a year ahead)
+#   zscaler-hold --release    drop the hold
+#   zscaler-hold --status     show the schedule in effect and the next slot
+#
+# The times live in the schedule dotfile (dots .config/zscaler-schedule/schedule);
+# this only writes ~/.config/zscaler-schedule/hold, which stays out of git. A hold
+# does not start Zscaler; once switched off, the next on slot brings it back, or
+# sudo /usr/local/libexec/zscaler-schedule on ~/.config/zscaler-schedule $(id -u)
+
+set -euo pipefail
+
+dir="${ZSCALER_SCHEDULE_CONFIG:-$HOME/.config/zscaler-schedule}"
+hold_file="$dir/hold"
+today="${ZSCALER_SCHEDULE_TODAY:-$(date +%F)}"
+self="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+installed="${ZSCALER_SCHEDULE_BIN:-/usr/local/libexec/zscaler-schedule}"
+repo_copy="$self/../macos/zscaler-schedule/zscaler-schedule"
+
+set_hold() {
+  mkdir -p "$dir"
+  [[ -z "$1" ]] && { rm -f "$hold_file"; return; }
+  echo "HOLD_UNTIL=$1" >"$hold_file.tmp"
+  mv "$hold_file.tmp" "$hold_file"
+}
+
+# A real calendar date from today to a year ahead: string comparison of dates is
+# only safe on dates that exist, and a typo in the year would hold for good.
+valid_date() {
+  local normal limit
+  normal="$(date -j -f %Y-%m-%d "$1" +%F 2>/dev/null)" && [[ "$normal" == "$1" ]] ||
+    { echo "not a date (YYYY-MM-DD): $1" >&2; exit 64; }
+  limit="$(date -j -v+1y -f %Y-%m-%d "$today" +%F)"
+  [[ ! "$1" < "$today" && ! "$1" > "$limit" ]] ||
+    { echo "hold date must be between $today and $limit: $1" >&2; exit 64; }
+}
+
+# The root script's own parser reports, so status cannot disagree with what the
+# job will do; the installed copy wins, the repo copy covers a missing install.
+status() {
+  local script
+  for script in "$installed" "$repo_copy"; do
+    [[ -x "$script" ]] || continue
+    "$script" status "$dir" "$(id -u)" 2>/dev/null || continue
+    [[ "$script" == "$installed" ]] || echo "(from the repo copy; the job is not installed or is outdated)"
+    break
+  done
+  [[ -e "$dir/config" ]] && echo "note: $dir/config is from an older version and is ignored; remove it"
+  return 0
+}
+
+arg="${1:-tonight}"
+case "$arg" in
+  tonight) set_hold "$today" ;;
+  --release) set_hold "" ;;
+  --status) ;;
+  -h | --help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -*) echo "unknown option: $arg" >&2; exit 64 ;;
+  *) valid_date "$arg"; set_hold "$arg" ;;
+esac
+
+status
