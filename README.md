@@ -147,3 +147,28 @@ train run demo      # stops on fail/needs-user; rerun to resume
 train watch         # curses table; q quits, exits 0 on completion
 train ls
 ```
+
+## Zscaler schedule
+
+A pair of launchd jobs switches Zscaler off at 18:00 to 21:00 and back on at
+08:00 on weekdays. The jobs run a root-owned copy of
+`macos/zscaler-schedule/zscaler-schedule`, installed once with:
+
+```sh
+sudo macos/zscaler-schedule/install            # --remove to uninstall
+```
+
+Per-night control needs no sudo. `zscaler-hold` writes
+`~/.config/zscaler-schedule/config`, which the root job reads as data, never as
+code:
+
+```sh
+zscaler-hold              # keep Zscaler on tonight
+zscaler-hold 2026-11-20   # keep it on up to and including that day
+zscaler-hold --never      # disable the switch-off (--resume undoes it)
+zscaler-hold --status
+```
+
+A hold only stops the switch-off. Once Zscaler is off, the morning job or
+`sudo /usr/local/libexec/zscaler-schedule on ~/.config/zscaler-schedule $(id -u)`
+brings it back.
