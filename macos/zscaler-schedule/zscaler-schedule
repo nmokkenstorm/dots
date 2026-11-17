@@ -68,6 +68,16 @@ times() {
   echo "$2" | tr ',' '\n'
 }
 
+# ISO weekday numbers of a comma list of 1-7 or mon..sun (any case), one per line.
+# A list with no valid entry falls back to the default, like times.
+days() {
+  local valid
+  valid="$(echo "$1" | tr 'A-Z,' 'a-z\n' | sed -e 's/^mon$/1/' -e 's/^tue$/2/' -e 's/^wed$/3/' \
+    -e 's/^thu$/4/' -e 's/^fri$/5/' -e 's/^sat$/6/' -e 's/^sun$/7/' | grep -E '^[1-7]$' | sort -u)"
+  [[ -n "$valid" ]] && { echo "$valid"; return; }
+  echo "$2" | tr ',' '\n'
+}
+
 skip_reason() {
   [[ "$(setting "$schedule" OFF_ENABLED true)" == false ]] && { echo "OFF_ENABLED=false"; return; }
   local hold
@@ -105,7 +115,7 @@ switch_on() {
 due_slot() {
   {
     times "$(setting "$schedule" OFF_AT "")" 18:00,19:00,20:00,21:00 | sed 's/$/ off/'
-    echo ",$(setting "$schedule" ON_DAYS 1,2,3,4,5)," | grep -q ",$weekday," &&
+    days "$(setting "$schedule" ON_DAYS "")" 1,2,3,4,5 | grep -qx "$weekday" &&
       times "$(setting "$schedule" ON_AT "")" 08:00 | sed 's/$/ on/'
   } | sort | awk -v now="$clock" '$1 <= now { slot = $0 } END { print slot }'
 }
