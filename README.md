@@ -147,3 +147,15 @@ train run demo      # stops on fail/needs-user; rerun to resume
 train watch         # curses table; q quits, exits 0 on completion
 train ls
 ```
+
+## Stale host routes
+
+A VPN or filter client pins per-destination host routes to the gateway of the network it saw them on and
+leaves them behind on a network change, so those addresses (Slack, more than once) fail locally. A root job
+deletes static host routes whose gateway is no longer on-link on the route's interface, on every network
+change and every 5 minutes, and logs each removal to `/var/log/stale-routes.log`.
+
+```sh
+sudo macos/stale-routes/install            # --remove to uninstall
+STALE_ROUTES_DRY=1 macos/stale-routes/stale-routes   # show what it would delete
+```
