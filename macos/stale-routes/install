@@ -1,0 +1,55 @@
+#!/bin/bash
+# Install the stale host route cleanup: a root-owned script and one launchd job.
+#
+#   sudo macos/stale-routes/install            install or update
+#   sudo macos/stale-routes/install --remove   unload and delete the job and its log
+#
+# The job runs on every network configuration change and every 5 minutes, and logs what it
+# removes to /var/log/stale-routes.log.
+
+set -euo pipefail
+
+[[ "$(id -u)" == 0 ]] || { echo "run with sudo" >&2; exit 77; }
+
+src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bin=/usr/local/libexec/stale-routes
+label=dev.mokkenstorm.stale-routes
+target="/Library/LaunchDaemons/$label.plist"
+log=/var/log/stale-routes.log
+
+launchctl bootout "system/$label" 2>/dev/null || true
+
+if [[ "${1:-}" == --remove ]]; then
+  rm -f "$target" "$bin" "$log"
+  echo "removed"
+  exit 0
+fi
+
+install -d -o root -g wheel -m 755 /usr/local/libexec
+install -o root -g wheel -m 755 "$src/stale-routes" "$bin"
+
+trap 'rm -f "$target.new"' EXIT
+cat >"$target.new" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key>
+  <array><string>$bin</string></array>
+  <key>WatchPaths</key>
+  <array><string>/Library/Preferences/SystemConfiguration</string></array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>$log</string>
+  <key>StandardErrorPath</key><string>$log</string>
+</dict>
+</plist>
+EOF
+plutil -lint "$target.new" >/dev/null
+chown root:wheel "$target.new"
+chmod 644 "$target.new"
+mv "$target.new" "$target"
+launchctl bootstrap system "$target"
+echo "installed $bin; log at $log"
