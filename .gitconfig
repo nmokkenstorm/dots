@@ -3,14 +3,6 @@
 	email = niels@mokkenstorm.dev
 	signingkey = 9048D9E07F5F887F
 
-[includeIf "gitdir:~/Developer/riotbyte/"]
-	path = ~/.gitconfig-riotbyte
-
-[includeIf "gitdir:~/Developer/mokkenstorm-dev/"]
-	path = ~/.gitconfig-personal
-
-[includeIf "gitdir:~/Developer/personal/"]
-	path = ~/.gitconfig-personal
 [core]
 	excludesfile = ~/.globalgitignore
 [pull]
@@ -67,3 +59,13 @@
 # Platform paths and signing, linked by install.sh to .gitconfig-macos or .gitconfig-linux
 [include]
 	path = ~/.gitconfig-os
+
+# Per-directory identities last, so they win over the platform credential helpers above
+[includeIf "gitdir:~/Developer/riotbyte/"]
+	path = ~/.gitconfig-riotbyte
+
+[includeIf "gitdir:~/Developer/mokkenstorm-dev/"]
+	path = ~/.gitconfig-personal
+
+[includeIf "gitdir:~/Developer/personal/"]
+	path = ~/.gitconfig-personal

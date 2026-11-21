@@ -1,3 +1,7 @@
 [user]
 	email = niels@mokkenstorm.dev
 	signingkey = 9048D9E07F5F887F
+# The global gh helper answers as gh's active account; personal repos always push as nmokkenstorm
+[credential "https://github.com"]
+	helper =
+	helper = "!f() { test \"$1\" = get || exit 0; echo username=x-access-token; echo \"password=$(gh auth token --user nmokkenstorm)\"; }; f"
