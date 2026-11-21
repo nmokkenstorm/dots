@@ -6,6 +6,10 @@ import = [
     #"~/.config/alacritty/themes/themes/gruvbox_dark.toml",
 ]
 
+[terminal]
+# Copies go through pbcopy (tmux copy-command); a second OSC 52 write racing it is refused by NSPasteboard and pops a warning bar.
+osc52 = "Disabled"
+
 [terminal.shell]
 program = "/bin/zsh"
 
