@@ -124,6 +124,7 @@ ln -sf "$root/bin/bar-lib" ~/.local/bin/bar-lib
 ln -sf "$root/bin/bar-sys" ~/.local/bin/bar-sys
 ln -sf "$root/bin/bar-pr" ~/.local/bin/bar-pr
 ln -sf "$root/bin/bar-reeds" ~/.local/bin/bar-reeds
+ln -sf "$root/bin/bar-music" ~/.local/bin/bar-music
 ln -sf "$root/bin/researchmon" ~/.local/bin/researchmon
 ln -sf "$root/bin/statmon" ~/.local/bin/statmon
 ln -sf "$root/bin/throb" ~/.local/bin/throb

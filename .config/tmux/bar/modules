@@ -1,4 +1,5 @@
 # <left|centre|right> <name>; a module publishes into @bar_<name>
 left pr
+centre music
 centre reeds
 right sys

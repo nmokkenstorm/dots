@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# bar-music: the system Now Playing track (Chrome, Spotify, Music, VLC 4) for the bar.
+# media-control reads MediaRemote through /usr/bin/perl, the entitled path left after macOS 15.4.
+. "$(dirname "$(readlink -f "$0")")/bar-lib"
+INTERVAL=5
+
+# stdin: `media-control get` json, or null when nothing is loaded. Doubling # keeps metadata from reading as tmux styles.
+summarise() {
+  jq -r '
+    def cut($n): if length > $n then .[:$n - 1] + "…" else . end;
+    def safe: gsub("#"; "##");
+    select(type == "object" and (.title // "") != "")
+    | (if .playing then "#[fg=#908caa]PLAY #[fg=#e0def4]" else "#[fg=#908caa]PAUSE " end)
+      + (.title | cut(40) | safe)
+      + (if (.artist // "") != "" then "#[fg=#908caa] · " + (.artist | cut(24) | safe) else "" end)
+      + "#[fg=#e0def4]"'
+}
+
+render() { command -v media-control >/dev/null 2>&1 && media-control get 2>/dev/null | summarise; }
+
+case "${1:-}" in
+  summarise) summarise ;;
+  *) bar_main "$@" ;;
+esac
