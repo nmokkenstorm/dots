@@ -34,7 +34,7 @@ def at(seconds):
 
 class Threshold(unittest.TestCase):
     def test_rule(self):
-        cases = [(200, 100), (600, 240), (30, None), (10, None), (None, 240)]
+        cases = [(200, 100), (600, 240), (30, None), (10, None), (None, 120)]
         for duration, expected in cases:
             with self.subTest(duration=duration):
                 track = tn.track_of(snap(duration=duration))
@@ -119,7 +119,7 @@ class Fold(unittest.TestCase):
     def test_unknown_duration_uses_four_minutes_and_omits_duration(self):
         play, effects = tn.step(None, snap(duration=None, album=""), T0, POLICY, MUSIC)
         self.assertEqual(effects[0][1]["expiry"], tn.iso(at(600)))
-        play, effects = tn.tick(play, at(240))
+        play, effects = tn.tick(play, at(120))
         record = effects[0][1]
         self.assertNotIn("duration", record)
         self.assertNotIn("releaseName", record)
@@ -198,7 +198,26 @@ class Gating(unittest.TestCase):
         play, _ = tn.step(None, snap(), T0, POLICY, judge)
         play, _ = tn.step(play, snap(playing=False), at(5), POLICY, judge)
         play, _ = tn.step(play, snap(), at(9), POLICY, judge)
-        self.assertEqual(calls, ["k1"])
+        self.assertEqual(len(calls), 1)
+
+
+class Identity(unittest.TestCase):
+    def test_new_content_id_for_the_same_song_keeps_the_play(self):
+        play, _ = tn.step(None, snap(key="a"), T0, POLICY, MUSIC)
+        play, effects = tn.step(play, snap(key="b"), at(30), POLICY, MUSIC)
+        self.assertEqual(effects, [])
+        self.assertEqual(play.started, T0)
+
+    def test_musicbrainz_length_fills_a_missing_duration(self):
+        match = tn.best_match([recording("Song", ["Artist"], 172000)], "Artist", "Song", None)
+        judge = lambda track, raw: tn.Music(match)
+        play, _ = tn.step(None, snap(duration=None), T0, POLICY, judge)
+        self.assertEqual(play.track.duration, 172)
+        play, _ = tn.step(play, snap(duration=None, playing=True), at(10), POLICY, judge)
+        self.assertEqual(play.track.duration, 172)
+        play, effects = tn.tick(play, at(86))
+        self.assertEqual(kinds(effects), ["play"])
+        self.assertEqual(effects[0][1]["duration"], 172)
 
 
 if __name__ == "__main__":

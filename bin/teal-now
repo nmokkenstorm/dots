@@ -46,7 +46,7 @@ MB_AGENT = "teal-now/0.2 (personal scrobbler)"
 DEFAULT_TRUSTED = ["com.spotify.client", "com.apple.Music", "org.videolan.vlc"]
 TICK_SECONDS = 15
 STATUS_FALLBACK = timedelta(minutes=10)
-UNKNOWN_DURATION_THRESHOLD = 240.0
+UNKNOWN_DURATION_THRESHOLD = 120.0
 MAX_MUSIC_SECONDS = 20 * 60
 MB_MIN_INTERVAL = 1.1
 MB_MIN_SCORE = 90
@@ -98,6 +98,7 @@ class Match:
     artists: tuple
     release: str | None
     release_name: str | None
+    length: float | None = None
 
 
 @dataclass(frozen=True)
@@ -164,7 +165,7 @@ def track_of(payload):
         return None
     duration = payload.get("duration")
     return Track(
-        key=payload.get("contentItemIdentifier") or f"{title}\x00{payload.get('artist', '')}",
+        key="\x00".join([payload.get("bundleIdentifier") or "", normalise(title), normalise(payload.get("artist") or "")]),
         title=title,
         artists=artists_of(payload.get("artist")),
         album=(payload.get("album") or "").strip(),
@@ -219,6 +220,7 @@ def best_match(candidates, artist, title, duration):
     release = (found.get("releases") or [{}])[0]
     return Match(
         recording=found["id"],
+        length=found["length"] / 1000 if found.get("length") else None,
         title=found.get("title", title),
         artists=tuple(Artist(c.get("name", ""), c.get("artist", {}).get("id")) for c in found.get("artist-credit", [])),
         release=release.get("id"),
@@ -306,6 +308,12 @@ def status_record(play, now):
     return {"$type": "fm.teal.actor.status", "time": iso(now), "expiry": iso(now + remaining), "item": item}
 
 
+def with_known_length(track, verdict):
+    """Browsers report no duration; a MusicBrainz match knows the recording's length."""
+    match = verdict.match if isinstance(verdict, Music) else None
+    return replace(track, duration=match.length) if track.duration is None and match and match.length else track
+
+
 def step(play, payload, now, policy, judge):
     """Fold one Now Playing snapshot into the current play; judge(track, raw_artist) runs once per track."""
     track = track_of(payload)
@@ -320,12 +328,13 @@ def step(play, payload, now, policy, judge):
         return play, effects
     if play is None:
         verdict = judge(track, payload.get("artist") or "")
+        track = with_known_length(track, verdict)
         play = Play(track, verdict, now, 0.0, now if playing else None, False)
         if playing and isinstance(verdict, Music):
             effects.append(("status", status_record(play, now)))
         return play, effects
     if track != play.track:
-        play = replace(play, track=track)
+        play = replace(play, track=track if track.duration is not None else replace(track, duration=play.track.duration))
     if playing and play.playing_since is None:
         play = replace(play, playing_since=now)
         if isinstance(play.verdict, Music):
