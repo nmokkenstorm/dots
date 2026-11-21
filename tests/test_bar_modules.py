@@ -76,8 +76,8 @@ class BarMusic(unittest.TestCase):
 
     def test_long_titles_are_cut(self):
         out = run("bar-music", [], track(title="x" * 200))
-        self.assertIn("x" * 30 + "…", out)
-        self.assertNotIn("x" * 60, out)
+        self.assertIn("x" * 70 + "…", out)
+        self.assertNotIn("x" * 90, out)
 
     def test_hash_in_metadata_cannot_inject_tmux_styles(self):
         self.assertIn("##[fg=red]", run("bar-music", [], track(title="#[fg=red]")))

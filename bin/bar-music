@@ -11,8 +11,8 @@ summarise() {
     def safe: gsub("#"; "##");
     select(type == "object" and (.title // "") != "")
     | (if .playing then "#[fg=#908caa]PLAY #[fg=#e0def4]" else "#[fg=#908caa]PAUSE " end)
-      + (.title | cut(40) | safe)
-      + (if (.artist // "") != "" then "#[fg=#908caa] · " + (.artist | cut(24) | safe) else "" end)
+      + (.title | cut(80) | safe)
+      + (if (.artist // "") != "" then "#[fg=#908caa] · " + (.artist | cut(32) | safe) else "" end)
       + "#[fg=#e0def4]"'
 }
 
