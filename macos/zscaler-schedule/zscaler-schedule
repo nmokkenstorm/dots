@@ -6,22 +6,12 @@
 #   zscaler-schedule on     <config-dir> <uid>   switch on now
 #   zscaler-schedule status <config-dir> <uid>   print the settings in effect; changes nothing
 #
-# Installed root-owned into /usr/local/libexec by install. Two files in
-# <config-dir> are read as data only: root never sources or executes anything from
-# a user-writable path, or editing ~/.config would be a way to run code as root.
+# Runs as root, so <config-dir>/schedule and <config-dir>/hold are parsed as data,
+# never sourced: editing ~/.config must not be a way to run code as root.
 #
-#   schedule  OFF_AT, ON_AT, ON_DAYS, OFF_ENABLED (the dotfile, see that file)
-#   hold      HOLD_UNTIL=2026-11-17, written by zscaler-hold: skip the switch-off
-#             up to and including that day
-#
-# A tick runs the latest slot after the previous tick and at or before now, so a
-# slot missed while asleep runs once on wake, while a fresh install or a schedule
-# edit never fires a slot that was already in the past. A slot skipped by a hold
-# still counts as passed. The watermark lives in a root-owned state directory.
-#
-# ZSCALER_SCHEDULE_DRY=1 prints the commands instead of running them;
+# Tests: ZSCALER_SCHEDULE_DRY=1 prints commands instead of running them;
 # ZSCALER_SCHEDULE_NOW="YYYY-MM-DD HH:MM" and ZSCALER_SCHEDULE_STATE override the
-# clock and the state directory for tests.
+# clock and the state directory.
 
 set -uo pipefail
 
@@ -53,9 +43,7 @@ run() {
   "$@"
 }
 
-# The last KEY=value line for key, with carriage returns, whitespace and a trailing
-# "# comment" removed; values never contain spaces. A value with anything but safe
-# characters is ignored and the fallback is used.
+# Last KEY=value wins; a value with unsafe characters falls back rather than reaching root's commands.
 setting() {
   local file="$1" key="$2" fallback="$3" value=""
   [[ -f "$file" ]] && value="$(tr -d '\r' <"$file" | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]//g' |
@@ -73,8 +61,6 @@ times() {
   echo "$2" | tr ',' '\n'
 }
 
-# ISO weekday numbers of a comma list of 1-7 or mon..sun (any case), one per line.
-# A list with no valid entry falls back to the default, like times.
 days() {
   local valid
   valid="$(echo "$1" | tr 'A-Z,' 'a-z\n' | sed -e 's/^mon$/1/' -e 's/^tue$/2/' -e 's/^wed$/3/' \
@@ -126,7 +112,6 @@ switch_on() {
   run launchctl bootstrap "gui/$uid" /Library/LaunchAgents/com.zscaler.tray.plist
 }
 
-# Today's slots as "HH:MM action", sorted; on slots only on an on day.
 slots() {
   {
     off_times | sed 's/$/ off/'
@@ -134,13 +119,11 @@ slots() {
   } | sort
 }
 
-# The latest slot in (after, now], or nothing.
 due_slot() {
   slots | awk -v after="$1" -v now="$clock" '$1 > after && $1 <= now { slot = $0 } END { print slot }'
 }
 
-# The previous tick's time of day if it was today; a tick on an earlier day means
-# every slot of today is still ahead of it.
+# A tick on an earlier day leaves every slot of today ahead of it.
 last_tick() {
   local last
   last="$(cat "$watermark" 2>/dev/null || true)"
@@ -153,8 +136,7 @@ last_tick() {
 tick() {
   local after slot
   mkdir -p "$state"
-  # No usable watermark (fresh install, lost state, clock moved back): start from
-  # now instead of firing whatever slot already passed today.
+  # Without a usable watermark (fresh install, lost state, clock moved back) a slot already past today must not fire.
   after="$(last_tick)" || after="$clock"
   slot="$(due_slot "$after")"
   [[ "${slot##* }" == off ]] && switch_off

@@ -162,33 +162,16 @@ STALE_ROUTES_DRY=1 macos/stale-routes/stale-routes   # show what it would delete
 
 ## Zscaler schedule
 
-A root launchd job ticks every 5 minutes and switches Zscaler off in the evening
-and on in the morning. The times are a dotfile,
-`.config/zscaler-schedule/schedule`, symlinked into `~/.config` by `install.sh`:
-edit it and the next tick picks it up, no sudo.
-
-The job runs a root-owned copy of `macos/zscaler-schedule/zscaler-schedule`,
-installed once with:
+A root launchd job ticks every 5 minutes, switching Zscaler off in the evening and on in the morning.
+The times are the dotfile `.config/zscaler-schedule/schedule`; edits apply on the next tick, no sudo.
 
 ```sh
-sudo macos/zscaler-schedule/install            # --remove to uninstall
-```
-
-Root reads the dotfile as data, never as code. A per-night exception is
-`zscaler-hold`, which writes `~/.config/zscaler-schedule/hold`, outside git:
-
-```sh
-zscaler-hold              # keep Zscaler on tonight
-zscaler-hold 2026-11-20   # keep it on up to and including that day
+sudo macos/zscaler-schedule/install       # once; --remove to uninstall
+zscaler-hold                              # keep Zscaler on tonight
+zscaler-hold 2026-11-20                   # keep it on up to and including that day
 zscaler-hold --release
-zscaler-hold --status
+zscaler-hold --status                     # what the job will actually use, and the next slot
 ```
 
-Each tick runs the latest slot after the previous tick and at or before now,
-so a slot missed while the laptop slept runs once on wake, while a fresh install
-or an edit that moves a slot into the past never fires it. Lines may carry
-spaces, CRLF endings or a trailing `# comment`; an invalid list falls back to
-the defaults, and `zscaler-hold --status` shows what the job will actually use.
-A hold only stops the switch-off; once Zscaler is off, the next on slot or
-`sudo /usr/local/libexec/zscaler-schedule on ~/.config/zscaler-schedule $(id -u)`
-brings it back.
+A slot missed while the laptop slept runs once on wake; a fresh install or an edit never fires a slot already in the past.
+A hold only stops the switch-off: once Zscaler is off, the next on slot brings it back.

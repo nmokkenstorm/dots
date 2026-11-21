@@ -4,10 +4,8 @@
 #   sudo macos/zscaler-schedule/install            install or update
 #   sudo macos/zscaler-schedule/install --remove   unload and delete the job and its state
 #
-# One job ticks every 5 minutes; the times live in the schedule dotfile
-# (~/.config/zscaler-schedule/schedule) and holds in its hold file (see
-# bin/zscaler-hold), so changing them needs no sudo. Replaces the earlier
-# dev.mokkenstorm.zscaler-{off,on} calendar jobs.
+# The job reads its times from ~/.config/zscaler-schedule, so changing them needs no sudo.
+# The off/on job names are the earlier calendar jobs, removed on every install.
 
 set -euo pipefail
 
@@ -27,11 +25,15 @@ unload() {
   launchctl bootout "system/$1" 2>/dev/null || true
 }
 
-if [[ "${1:-}" == --remove ]]; then
-  for job in off on schedule; do
+remove_jobs() {
+  for job in "$@"; do
     unload "dev.mokkenstorm.zscaler-$job"
     rm -f "$daemons/dev.mokkenstorm.zscaler-$job.plist"
   done
+}
+
+if [[ "${1:-}" == --remove ]]; then
+  remove_jobs off on schedule
   rm -rf "$bin" "$state"
   rm -f /var/log/zscaler-schedule.log
   echo "removed"
@@ -69,10 +71,7 @@ plist >"$target.new"
 plutil -lint "$target.new" >/dev/null
 chown root:wheel "$target.new"
 chmod 644 "$target.new"
-for job in off on; do
-  unload "dev.mokkenstorm.zscaler-$job"
-  rm -f "$daemons/dev.mokkenstorm.zscaler-$job.plist"
-done
+remove_jobs off on
 unload "$label"
 mv "$target.new" "$target"
 launchctl bootstrap system "$target"
