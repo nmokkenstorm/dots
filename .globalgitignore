@@ -19,3 +19,5 @@ CLAUDE.md
 
 # Worktrees live inside the checkout
 .worktrees/
+
+**/.claude/settings.local.json
