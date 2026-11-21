@@ -229,6 +229,27 @@ class Editions(unittest.TestCase):
         self.assertEqual(tn.best_match([on_new, on_known], "Artist", "Song", None).release, "rel-new")
 
 
+class KnownArtists(unittest.TestCase):
+    def test_unmatched_play_borrows_a_known_artist(self):
+        class Lookup:
+            def __call__(self, artist, title):
+                return []
+
+            def artist(self, name):
+                return tn.Artist("Abel", "art-abel") if tn.normalise(name) == "abel" else None
+
+        track = tn.track_of(snap(title="New Single", artist="ABEL - Topic", album="", source="org.mozilla.firefox"))
+        verdict = tn.classify(track, "ABEL - Topic", FIREFOX, Lookup())
+        self.assertEqual(verdict.known_artists, (tn.Artist("Abel", "art-abel"),))
+        play = tn.Play(track, verdict, T0, 0.0, T0, False)
+        self.assertEqual(tn.play_record(play)["artists"], [{"artistName": "Abel", "artistMbId": "mbid:art-abel"}])
+
+    def test_unknown_artist_keeps_the_raw_name(self):
+        track = tn.track_of(snap(title="Song", artist="Band - Topic", album="", source="org.mozilla.firefox"))
+        verdict = tn.classify(track, "Band - Topic", FIREFOX, lambda a, t: [])
+        self.assertEqual(verdict.known_artists, ())
+
+
 class Enrichment(unittest.TestCase):
     def test_release_pick_is_stable_and_prefers_earliest_official(self):
         releases = [{"id": "b", "status": "Official", "date": "2026-03-27"},

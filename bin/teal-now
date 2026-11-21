@@ -63,6 +63,7 @@ CACHE = STATE / "musicbrainz-cache.json"
 LOG = STATE / "teal-now.log"
 ENRICH_TRIED = STATE / "enrich-tried.json"
 EDITIONS = STATE / "editions.json"
+ARTISTS = STATE / "artists.json"
 ENRICH_RETRY_SECONDS = 6 * 3600
 ENRICH_EVERY_SECONDS = 600
 
@@ -109,6 +110,7 @@ class Match:
 @dataclass(frozen=True)
 class Music:
     match: Match | None
+    known_artists: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -255,22 +257,30 @@ def resolve(lookup, artist, title, duration):
     return match
 
 
+def known_artists(lookup, names):
+    """Artists seen in earlier confident matches, by name; empty unless every name is known."""
+    found = tuple(lookup.artist(name) for name in names) if hasattr(lookup, "artist") else ()
+    return found if found and all(found) else ()
+
+
 def classify(track, raw_artist, policy, lookup):
     """lookup(artist, title) returns MusicBrainz recording candidates; it is the only IO."""
     if track.source in policy.trusted:
         artist, title = search_terms(track, raw_artist)
-        return Music(resolve(lookup, artist, title, track.duration) if artist else None)
+        return Music(resolve(lookup, artist, title, track.duration) if artist else None, known_artists(lookup, track.artists))
     ruled = rule_verdict(track, raw_artist, policy)
-    if ruled is not None:
+    if isinstance(ruled, NotMusic):
         return ruled
     artist, title = search_terms(track, raw_artist)
     match = resolve(lookup, artist, title, track.duration) if artist and title else None
+    if isinstance(ruled, Music):
+        return Music(match, known_artists(lookup, track.artists))
     if match is not None:
         return Music(match)
     if NOT_MUSIC_WORDS.search(track.title):
         return NotMusic("title reads as non-music and nothing matched")
     if looks_like_music(track, raw_artist):
-        return Music(None)
+        return Music(None, known_artists(lookup, track.artists))
     return Unsure("no confident MusicBrainz match")
 
 
@@ -299,7 +309,8 @@ def mbid(value):
 
 def described(track, verdict):
     match = verdict.match if isinstance(verdict, Music) else None
-    artists = match.artists if match else tuple(Artist(name) for name in track.artists)
+    artists = match.artists if match else (verdict.known_artists if isinstance(verdict, Music) and verdict.known_artists
+                                           else tuple(Artist(name) for name in track.artists))
     view = {
         "trackName": match.title if match else track.title,
         "artists": [
@@ -419,6 +430,10 @@ class MusicBrainz:
         self.last = 0.0
         self.failed = False
         try:
+            self.artists = json.loads(ARTISTS.read_text())
+        except (OSError, ValueError):
+            self.artists = {}
+        try:
             self.cache = json.loads(CACHE.read_text())
         except (OSError, ValueError):
             self.cache = {}
@@ -430,7 +445,9 @@ class MusicBrainz:
             return frozenset()
 
     def remember(self, match, candidates):
-        """Pin the album (release group) of a matched release to that edition."""
+        """Learn the canonical name and id of every credited artist, and pin the album (release group) to this edition."""
+        self.artists.update({normalise(a.name): [a.name, a.mbid] for a in match.artists if a.mbid})
+        ARTISTS.write_text(json.dumps(self.artists))
         group = next((r.get("release-group", {}).get("id") for c in candidates for r in c.get("releases") or []
                       if r.get("id") == match.release), None)
         if not group:
@@ -441,6 +458,10 @@ class MusicBrainz:
             editions = {}
         editions.setdefault(group, match.release)
         EDITIONS.write_text(json.dumps(editions))
+
+    def artist(self, name):
+        known = self.artists.get(normalise(name))
+        return Artist(known[0], known[1]) if known else None
 
     def __call__(self, artist, title):
         key = f"{normalise(artist)}\x00{normalise(title)}"
