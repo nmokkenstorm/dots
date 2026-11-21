@@ -29,7 +29,7 @@ class BarFormat(unittest.TestCase):
         cases = {
             "left pr\n": "#[align=left default fg=#e0def4]#{?@bar_pr,#{@bar_pr},}",
             "right sys\nright reeds\n": f"#{{?@bar_sys,#{{@bar_sys}},}}#{{?@bar_reeds,{SEP}#{{@bar_reeds}},}}",
-            "# a comment\n\ncentre train\n": "#[align=centre default fg=#e0def4]#{?@bar_train,#{@bar_train},}",
+            "# a comment\n\ncentre train\n": "#[align=absolute-centre default fg=#e0def4]#{?@bar_train,#{@bar_train},}",
         }
         for text, expected in cases.items():
             with self.subTest(text=text):

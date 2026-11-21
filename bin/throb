@@ -9,9 +9,9 @@
 #
 # Frames go into the @throb_line option and are drawn with refresh-client -S,
 # which repaints the bar without re-running the #() commands sharing it.
-# Where the frame lands is tmux's problem, not ours: --mount parks it in a
-# centre-aligned chunk, which tmux recentres in whatever gap the window list
-# and the right column leave, per client, on every redraw.
+# Where the frame lands is tmux's problem, not ours: --mount parks it in an
+# absolute-centre chunk, which tmux keeps on the screen's centre per client,
+# however wide the window list and the right column grow.
 
 set -uo pipefail
 STORE="${THROB_HOME:-$HOME/.throb}"
@@ -88,7 +88,7 @@ case "${1:-}" in
     head=${fmt%%"$marker"*}
     [ "$head" = "$fmt" ] && exit 0
     tmux set -g 'status-format[0]' \
-      "$head#[nolist align=centre default]#{@throb_line}${fmt#"$head"}"
+      "$head#[nolist align=absolute-centre default]#{@throb_line}${fmt#"$head"}"
     exit 0 ;;
 
   --off)
