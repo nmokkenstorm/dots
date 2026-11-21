@@ -64,6 +64,7 @@ LOG = STATE / "teal-now.log"
 ENRICH_TRIED = STATE / "enrich-tried.json"
 EDITIONS = STATE / "editions.json"
 ARTISTS = STATE / "artists.json"
+ART = STATE / "cover-art.json"
 ENRICH_RETRY_SECONDS = 6 * 3600
 ENRICH_EVERY_SECONDS = 600
 
@@ -209,17 +210,17 @@ def looks_like_music(track, raw_artist):
     return raw_artist.endswith(" - Topic") or raw_artist.endswith("VEVO") or bool(track.album)
 
 
-def pick_release(releases, preferred=frozenset()):
+def pick_release(releases, preferred=frozenset(), has_art=lambda release_id: True):
     """MusicBrainz lists a recording's releases in no stable order; an album split across editions is worse than any one edition.
 
     `preferred` holds releases already used for an album, so later tracks land on the same edition.
     """
-    ranked = sorted(releases, key=lambda r: (r.get("id") not in preferred, r.get("status") != "Official",
-                                             r.get("date") or "9999", r.get("id", "")))
+    ranked = sorted(releases, key=lambda r: (r.get("id") not in preferred, not has_art(r.get("id", "")),
+                                             r.get("status") != "Official", r.get("date") or "9999", r.get("id", "")))
     return ranked[0] if ranked else {}
 
 
-def best_match(candidates, artist, title, duration, preferred=frozenset()):
+def best_match(candidates, artist, title, duration, preferred=frozenset(), has_art=lambda release_id: True):
     """The highest-scoring recording whose title and an artist agree, and whose length fits if both are known."""
 
     def fits(candidate):
@@ -236,7 +237,7 @@ def best_match(candidates, artist, title, duration, preferred=frozenset()):
     found = (on_known_edition or fitting or [None])[0]
     if found is None:
         return None
-    release = pick_release(found.get("releases") or [], preferred)
+    release = pick_release(found.get("releases") or [], preferred, has_art)
     return Match(
         recording=found["id"],
         length=found["length"] / 1000 if found.get("length") else None,
@@ -251,7 +252,8 @@ def resolve(lookup, artist, title, duration):
     """Match, preferring album editions already used; a real MusicBrainz lookup also remembers the edition it settled on."""
     candidates = lookup(artist, title)
     preferred = lookup.preferred() if hasattr(lookup, "preferred") else frozenset()
-    match = best_match(candidates, artist, title, duration, preferred)
+    has_art = lookup.has_art if hasattr(lookup, "has_art") else (lambda release_id: True)
+    match = best_match(candidates, artist, title, duration, preferred, has_art)
     if match is not None and hasattr(lookup, "remember"):
         lookup.remember(match, candidates)
     return match
@@ -430,6 +432,10 @@ class MusicBrainz:
         self.last = 0.0
         self.failed = False
         try:
+            self.art = json.loads(ART.read_text())
+        except (OSError, ValueError):
+            self.art = {}
+        try:
             self.artists = json.loads(ARTISTS.read_text())
         except (OSError, ValueError):
             self.artists = {}
@@ -437,6 +443,23 @@ class MusicBrainz:
             self.cache = json.loads(CACHE.read_text())
         except (OSError, ValueError):
             self.cache = {}
+
+    def has_art(self, release_id):
+        """Whether the Cover Art Archive has a front image for the release, which is what teal shows as the cover."""
+        if not release_id:
+            return False
+        if release_id not in self.art:
+            request = urllib.request.Request(f"https://coverartarchive.org/release/{release_id}/front-250",
+                                             method="HEAD", headers={"User-Agent": MB_AGENT})
+            try:
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    self.art[release_id] = response.status < 400
+            except urllib.error.HTTPError as error:
+                self.art[release_id] = error.code < 400
+            except OSError:
+                return True
+            ART.write_text(json.dumps(self.art))
+        return self.art[release_id]
 
     def preferred(self):
         try:

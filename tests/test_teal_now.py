@@ -250,6 +250,17 @@ class KnownArtists(unittest.TestCase):
         self.assertEqual(verdict.known_artists, ())
 
 
+class CoverArt(unittest.TestCase):
+    def test_edition_with_cover_art_wins(self):
+        releases = [{"id": "no-art", "status": "Official", "date": "2026-02-06"},
+                    {"id": "art", "status": "Official", "date": "2026-03-27"}]
+        self.assertEqual(tn.pick_release(releases, has_art=lambda r: r == "art")["id"], "art")
+
+    def test_known_edition_still_beats_art(self):
+        releases = [{"id": "pinned"}, {"id": "art"}]
+        self.assertEqual(tn.pick_release(releases, frozenset({"pinned"}), lambda r: r == "art")["id"], "pinned")
+
+
 class Enrichment(unittest.TestCase):
     def test_release_pick_is_stable_and_prefers_earliest_official(self):
         releases = [{"id": "b", "status": "Official", "date": "2026-03-27"},
