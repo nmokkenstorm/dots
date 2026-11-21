@@ -17,6 +17,7 @@ is public, so a track is only published once it is known to be music:
   teal-now review                      list held plays
   teal-now review approve N [--allow]  publish one (and always allow its artist)
   teal-now review reject N [--deny]    drop one (and always deny its artist)
+  teal-now enrich                      re-match plays published without MusicBrainz ids
 
 Config: ~/.config/teal-now/config.json (TEAL_NOW_CONFIG overrides)
   {"trusted": ["com.spotify.client"], "classified": ["org.mozilla.firefox"],
@@ -48,7 +49,7 @@ TICK_SECONDS = 15
 STATUS_FALLBACK = timedelta(minutes=10)
 UNKNOWN_DURATION_THRESHOLD = 30.0
 MAX_MUSIC_SECONDS = 20 * 60
-MB_MIN_INTERVAL = 1.1
+MB_MIN_INTERVAL = 1.5
 MB_MIN_SCORE = 90
 SIMILARITY = 0.85
 DURATION_SLACK = 8.0
@@ -60,6 +61,10 @@ OUTBOX = STATE / "outbox.jsonl"
 REVIEW = STATE / "review.jsonl"
 CACHE = STATE / "musicbrainz-cache.json"
 LOG = STATE / "teal-now.log"
+ENRICH_TRIED = STATE / "enrich-tried.json"
+EDITIONS = STATE / "editions.json"
+ENRICH_RETRY_SECONDS = 6 * 3600
+ENRICH_EVERY_SECONDS = 600
 
 NOT_MUSIC_WORDS = re.compile(
     r"\b(podcast|episode|ep\.\s?\d|livestream|live stream|stream|meeting|webinar|trailer|interview|"
@@ -202,7 +207,17 @@ def looks_like_music(track, raw_artist):
     return raw_artist.endswith(" - Topic") or raw_artist.endswith("VEVO") or bool(track.album)
 
 
-def best_match(candidates, artist, title, duration):
+def pick_release(releases, preferred=frozenset()):
+    """MusicBrainz lists a recording's releases in no stable order; an album split across editions is worse than any one edition.
+
+    `preferred` holds releases already used for an album, so later tracks land on the same edition.
+    """
+    ranked = sorted(releases, key=lambda r: (r.get("id") not in preferred, r.get("status") != "Official",
+                                             r.get("date") or "9999", r.get("id", "")))
+    return ranked[0] if ranked else {}
+
+
+def best_match(candidates, artist, title, duration, preferred=frozenset()):
     """The highest-scoring recording whose title and an artist agree, and whose length fits if both are known."""
 
     def fits(candidate):
@@ -214,10 +229,12 @@ def best_match(candidates, artist, title, duration):
             and (duration is None or not length or abs(length / 1000 - duration) <= DURATION_SLACK)
         )
 
-    found = next((candidate for candidate in candidates if fits(candidate)), None)
+    fitting = [candidate for candidate in candidates if fits(candidate)]
+    on_known_edition = [c for c in fitting if any(r.get("id") in preferred for r in c.get("releases") or [])]
+    found = (on_known_edition or fitting or [None])[0]
     if found is None:
         return None
-    release = (found.get("releases") or [{}])[0]
+    release = pick_release(found.get("releases") or [], preferred)
     return Match(
         recording=found["id"],
         length=found["length"] / 1000 if found.get("length") else None,
@@ -228,16 +245,26 @@ def best_match(candidates, artist, title, duration):
     )
 
 
+def resolve(lookup, artist, title, duration):
+    """Match, preferring album editions already used; a real MusicBrainz lookup also remembers the edition it settled on."""
+    candidates = lookup(artist, title)
+    preferred = lookup.preferred() if hasattr(lookup, "preferred") else frozenset()
+    match = best_match(candidates, artist, title, duration, preferred)
+    if match is not None and hasattr(lookup, "remember"):
+        lookup.remember(match, candidates)
+    return match
+
+
 def classify(track, raw_artist, policy, lookup):
     """lookup(artist, title) returns MusicBrainz recording candidates; it is the only IO."""
     if track.source in policy.trusted:
         artist, title = search_terms(track, raw_artist)
-        return Music(best_match(lookup(artist, title), artist, title, track.duration) if artist else None)
+        return Music(resolve(lookup, artist, title, track.duration) if artist else None)
     ruled = rule_verdict(track, raw_artist, policy)
     if ruled is not None:
         return ruled
     artist, title = search_terms(track, raw_artist)
-    match = best_match(lookup(artist, title), artist, title, track.duration) if artist and title else None
+    match = resolve(lookup, artist, title, track.duration) if artist and title else None
     if match is not None:
         return Music(match)
     if NOT_MUSIC_WORDS.search(track.title):
@@ -390,10 +417,30 @@ class MusicBrainz:
 
     def __init__(self):
         self.last = 0.0
+        self.failed = False
         try:
             self.cache = json.loads(CACHE.read_text())
         except (OSError, ValueError):
             self.cache = {}
+
+    def preferred(self):
+        try:
+            return frozenset(json.loads(EDITIONS.read_text()).values())
+        except (OSError, ValueError):
+            return frozenset()
+
+    def remember(self, match, candidates):
+        """Pin the album (release group) of a matched release to that edition."""
+        group = next((r.get("release-group", {}).get("id") for c in candidates for r in c.get("releases") or []
+                      if r.get("id") == match.release), None)
+        if not group:
+            return
+        try:
+            editions = json.loads(EDITIONS.read_text())
+        except (OSError, ValueError):
+            editions = {}
+        editions.setdefault(group, match.release)
+        EDITIONS.write_text(json.dumps(editions))
 
     def __call__(self, artist, title):
         key = f"{normalise(artist)}\x00{normalise(title)}"
@@ -401,14 +448,20 @@ class MusicBrainz:
             return self.cache[key]
         query = f'recording:"{title}" AND artist:"{artist}"'
         url = "https://musicbrainz.org/ws/2/recording?" + urllib.parse.urlencode({"query": query, "fmt": "json", "limit": 5})
-        time.sleep(max(0.0, self.last + MB_MIN_INTERVAL - time.monotonic()))
-        self.last = time.monotonic()
-        try:
-            request = urllib.request.Request(url, headers={"User-Agent": MB_AGENT, "Accept": "application/json"})
-            with urllib.request.urlopen(request, timeout=8) as response:
-                candidates = json.load(response).get("recordings", [])
-        except (OSError, ValueError) as error:
-            log(f"musicbrainz lookup failed for {artist!r} / {title!r}: {error}")
+        self.failed = False
+        for attempt in range(3):
+            time.sleep(max(0.0, self.last + MB_MIN_INTERVAL * (attempt + 1) - time.monotonic()))
+            self.last = time.monotonic()
+            try:
+                request = urllib.request.Request(url, headers={"User-Agent": MB_AGENT, "Accept": "application/json"})
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    candidates = json.load(response).get("recordings", [])
+                break
+            except (OSError, ValueError) as error:
+                last_error = error
+        else:
+            log(f"musicbrainz lookup failed for {artist!r} / {title!r}: {last_error}")
+            self.failed = True
             return []
         self.cache[key] = candidates
         CACHE.write_text(json.dumps(self.cache))
@@ -439,6 +492,51 @@ def clear_status():
 
 def write_play(record):
     return goat_with(["record", "create", "--no-validate"], record)
+
+
+def enriched(record, lookup):
+    """One of our published plays matched again, so missing ids and an unstable release pick get fixed; None when nothing changes."""
+    if not str(record.get("submissionClientAgent", "")).startswith("teal-now/"):
+        return None
+    artist = (record.get("artists") or [{}])[0].get("artistName", "")
+    title = record.get("trackName", "")
+    match = resolve(lookup, artist, title, record.get("duration")) if artist and title else None
+    if match is None:
+        return None
+    track = Track("", title, (artist,), record.get("releaseName", ""), record.get("duration") or match.length, "")
+    updated = {**record, **described(track, Music(match))}
+    return updated if updated != record else None
+
+
+def enrich_pass(lookup, now):
+    """Re-match this account's teal-now plays and update the ones that resolve differently now, in place."""
+    tried = json.loads(ENRICH_TRIED.read_text()) if ENRICH_TRIED.exists() else {}
+    ok, listing = goat(["ls", "--collection", "fm.teal.feed.play", goat_did()])
+    if not ok:
+        return
+    for rkey in [line.split()[1] for line in listing.splitlines() if line.startswith("fm.teal.feed.play")]:
+        if now.timestamp() - tried.get(rkey, 0) < ENRICH_RETRY_SECONDS:
+            continue
+        got, raw = goat(["get", f"at://{goat_did()}/fm.teal.feed.play/{rkey}"])
+        record = enriched(json.loads(raw), lookup) if got else None
+        if got and not getattr(lookup, "failed", False):
+            tried[rkey] = now.timestamp()
+        if record is not None:
+            updated, err = goat_with(["record", "update", "--no-validate", "-r", rkey], record)
+            log(f"enriched {rkey} {record['trackName']!r}" if updated else f"enrich {rkey} failed: {err}")
+    ENRICH_TRIED.write_text(json.dumps(tried))
+
+
+_did = None
+
+
+def goat_did():
+    global _did
+    if _did is None:
+        result = subprocess.run(["goat", "account", "check-auth"], capture_output=True, text=True, timeout=30)
+        found = re.search(r"DID:\s*(did:\S+)", result.stdout)
+        _did = found.group(1) if found else ""
+    return _did
 
 
 def flush_outbox():
@@ -501,7 +599,7 @@ def run(dry_run_flag):
 
     stream = subprocess.Popen(["media-control", "stream"], stdout=subprocess.PIPE, text=True, bufsize=1)
     signal.signal(signal.SIGTERM, lambda *_: (stream.terminate(), sys.exit(0)))
-    snapshot, play = {}, None
+    snapshot, play, last_enrich = {}, None, 0.0
     try:
         while stream.poll() is None:
             ready, _, _ = select.select([stream.stdout], [], [], TICK_SECONDS)
@@ -519,6 +617,9 @@ def run(dry_run_flag):
                 play, effects = tick(play, now)
                 if not dry_run:
                     flush_outbox()
+                if not dry_run and time.monotonic() - last_enrich > ENRICH_EVERY_SECONDS:
+                    last_enrich = time.monotonic()
+                    enrich_pass(lookup, now)
             for effect in effects:
                 apply(effect, dry_run)
     finally:
@@ -582,6 +683,7 @@ def main(argv):
         "--toggle": lambda: off() if running() else on(),
         "run": lambda: run("--dry-run" in argv),
         "review": lambda: review(argv[1:]),
+        "enrich": lambda: enrich_pass(MusicBrainz(), datetime.now(timezone.utc)),
     }
     if command in actions:
         return actions[command]()

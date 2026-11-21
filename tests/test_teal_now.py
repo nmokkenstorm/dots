@@ -220,5 +220,44 @@ class Identity(unittest.TestCase):
         self.assertEqual(effects[0][1]["duration"], 172)
 
 
+class Editions(unittest.TestCase):
+    def test_known_edition_wins_over_ranking(self):
+        on_new = {**recording("Song", ["Artist"]), "id": "rec-new", "releases": [{"id": "rel-new", "status": "Official", "date": "2020-01-01"}]}
+        on_known = {**recording("Song", ["Artist"]), "id": "rec-known", "releases": [{"id": "rel-known", "status": "Official", "date": "2026-01-01"}]}
+        match = tn.best_match([on_new, on_known], "Artist", "Song", None, frozenset({"rel-known"}))
+        self.assertEqual((match.recording, match.release), ("rec-known", "rel-known"))
+        self.assertEqual(tn.best_match([on_new, on_known], "Artist", "Song", None).release, "rel-new")
+
+
+class Enrichment(unittest.TestCase):
+    def test_release_pick_is_stable_and_prefers_earliest_official(self):
+        releases = [{"id": "b", "status": "Official", "date": "2026-03-27"},
+                    {"id": "a", "status": "Official", "date": "2026-02-06"},
+                    {"id": "c", "status": "Bootleg", "date": "2025-01-01"}]
+        self.assertEqual(tn.pick_release(releases)["id"], "a")
+        self.assertEqual(tn.pick_release(list(reversed(releases)))["id"], "a")
+
+    def test_play_without_ids_gets_them(self):
+        record = {"$type": "fm.teal.feed.play", "trackName": "OPPBOTS", "artists": [{"artistName": "ABEL"}],
+                  "playedTime": "2026-11-21T14:14:03.165Z", "submissionClientAgent": tn.AGENT, "duration": 167}
+        found = [recording("OPPBOTS", ["Abel", "Sef"], 167200)]
+        out = tn.enriched(record, lambda a, t: found)
+        self.assertEqual(out["recordingMbId"], "mbid:rec-1")
+        self.assertEqual([a["artistName"] for a in out["artists"]], ["Abel", "Sef"])
+        self.assertEqual(out["playedTime"], record["playedTime"])
+        self.assertEqual(out["releaseName"], "LP")
+
+    def test_enrichment_leaves_matched_or_foreign_plays_alone(self):
+        found = [recording("Song", ["Artist"])]
+        settled = tn.enriched({"trackName": "Song", "artists": [{"artistName": "Artist"}], "submissionClientAgent": tn.AGENT},
+                              lambda a, t: found)
+        cases = [settled,
+                 {"trackName": "Song", "artists": [{"artistName": "Artist"}], "submissionClientAgent": "piper/1.0"},
+                 {"trackName": "Song", "artists": [{"artistName": "Nobody"}], "submissionClientAgent": tn.AGENT}]
+        for record in cases:
+            with self.subTest(record=record):
+                self.assertIsNone(tn.enriched(record, lambda a, t: found))
+
+
 if __name__ == "__main__":
     unittest.main()
