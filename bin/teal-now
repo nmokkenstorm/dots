@@ -46,7 +46,7 @@ MB_AGENT = "teal-now/0.2 (personal scrobbler)"
 DEFAULT_TRUSTED = ["com.spotify.client", "com.apple.Music", "org.videolan.vlc"]
 TICK_SECONDS = 15
 STATUS_FALLBACK = timedelta(minutes=10)
-UNKNOWN_DURATION_THRESHOLD = 120.0
+UNKNOWN_DURATION_THRESHOLD = 30.0
 MAX_MUSIC_SECONDS = 20 * 60
 MB_MIN_INTERVAL = 1.1
 MB_MIN_SCORE = 90

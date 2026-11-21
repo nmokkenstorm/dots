@@ -34,7 +34,7 @@ def at(seconds):
 
 class Threshold(unittest.TestCase):
     def test_rule(self):
-        cases = [(200, 100), (600, 240), (30, None), (10, None), (None, 120)]
+        cases = [(200, 100), (600, 240), (30, None), (10, None), (None, 30)]
         for duration, expected in cases:
             with self.subTest(duration=duration):
                 track = tn.track_of(snap(duration=duration))
@@ -119,7 +119,7 @@ class Fold(unittest.TestCase):
     def test_unknown_duration_uses_four_minutes_and_omits_duration(self):
         play, effects = tn.step(None, snap(duration=None, album=""), T0, POLICY, MUSIC)
         self.assertEqual(effects[0][1]["expiry"], tn.iso(at(600)))
-        play, effects = tn.tick(play, at(120))
+        play, effects = tn.tick(play, at(30))
         record = effects[0][1]
         self.assertNotIn("duration", record)
         self.assertNotIn("releaseName", record)
