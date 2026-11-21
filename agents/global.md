@@ -30,6 +30,7 @@ Niels' pronouns are they/she/he, in that order of preference; default to they.
 - Group namespace imports aggressively, including NESTED group-use at the common prefix, not just per immediate namespace: `use App\Billing\{Contracts\InvoiceContract, Exceptions\NotConfigured, Ledger};`, `use Backend\{Classes\FormField, Models\User as BackendUser, Widgets\Form};`, TS `import { a, b } from "./x"`. Never single-item groups, aliases inside a group are fine, sort on the real path, use the multi-line brace form when a line runs long, and leave bare facade imports (`use App;`, `use Log;`) alone
 - After any import rewrite, diff the SET of fully-qualified imported names (with aliases) before and after per file; a sweep like this once dropped a `use Log;` and the suite stayed green because nothing exercised that path. The set comparison is the guard, not the test run
 - Match the file-header convention the project already has (PHP: `<?php` + blank line + `namespace`, or October's same-line form) instead of importing one. Count the existing files before changing any; never introduce `declare(strict_types=1)` into a codebase that has none
+- CI workflow YAML (GitHub Actions, Bitbucket Pipelines, GitLab CI) holds only one-line `run:` steps; anything longer moves to a checked-in script the workflow calls, with a test when it carries logic. Shell inlined in YAML can't be linted, tested or reused, and its quoting bugs only surface in CI
 
 ### Data modelling
 
