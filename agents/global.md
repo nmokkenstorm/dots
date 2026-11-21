@@ -24,6 +24,7 @@ Niels' pronouns are they/she/he, in that order of preference; default to they.
 - Ternary operators for simple conditionals: one condition, two outcomes, one level deep
 - TDD
 - Keep files small and focused
+- No loose helper functions in a component, handler, service or resolver file. A file exports one thing and holds only what that thing needs to read top to bottom; a pure helper (formatting, mapping, a fold, a predicate, a lookup table) moves to its own module next to it with a unit test, or to the project's shared utilities when it is generic. Before writing one, search for an existing helper that already does it. A one-line expression used once stays inline; a function declared beside the component "for now" does not
 - Monorepo structure
 - Automation wherever possible
 - Group namespace imports aggressively, including NESTED group-use at the common prefix, not just per immediate namespace: `use App\Billing\{Contracts\InvoiceContract, Exceptions\NotConfigured, Ledger};`, `use Backend\{Classes\FormField, Models\User as BackendUser, Widgets\Form};`, TS `import { a, b } from "./x"`. Never single-item groups, aliases inside a group are fine, sort on the real path, use the multi-line brace form when a line runs long, and leave bare facade imports (`use App;`, `use Log;`) alone
@@ -212,6 +213,14 @@ Local pub/sub for agents, persistent across sessions. Daemon at `http://localhos
 - Marks mirror to reeds on `train.<id>.<key>` (kinds status/done/needs-user), and a completed run publishes `done` on `train.<id>`, tombstoning it off the dashboard. Best-effort: the train runs fine with reeds down; `TRAIN_NO_REEDS=1` suppresses
 - `train watch` is a curses dashboard showing every attended incomplete train as a section (or just a fixed id when given one); attended = fresh runner heartbeat (train run touches one every 15s), or marks within 4h, 24h while needs-user. It falls back to the latest train when all are done, idles when there are none, flags "runner heartbeat lost" on live steps with a stale heartbeat, and exits 0 only when the shown trains complete on its watch, which is what auto-closes the tmux `prefix+M` display-popup. `q` or `Esc` quits (exit 0 if all complete, else 1). needs-user steps get numbered badges: digit selects, `d` marks done, `s` skips, Esc cancels selection; the watcher writes only via the flock-safe `train mark`, never runs steps. `--whispers [prefix]` adds a 50/50 reeds feed pane polled on a background thread (default prefix `train`); the popup binding uses it. External runners (other agent sessions) drive a train with `train mark` alone; steps then carry `exit 75` placeholder commands
 - `glab-merge <project> <iid>` (same bin) is the GitLab step helper: waits for mergeable then merges, exit 75 on human-shaped blocks (conflict, approvals, tag protection), `GLAB_MERGE_TIMEOUT` caps the wait
+
+### Tangled (tg)
+
+`tg` is the CLI for repos hosted on Tangled (remote like `git@tangled.org:did:plc:...`); there is no `gh` there. Check `git remote -v` before reaching for `gh`.
+
+- `tg pr create -t <title> -b <body>` opens a PR from the current branch against origin's default branch; it does not push, so push first. `tg pr`, `tg issue`, `tg repo` mirror the usual verbs; `--json` for machine output
+- CI: `tg pipeline list` (status per commit), `tg pipeline view <id>`, `tg pipeline logs`, `tg pipeline retry`. Finished runs may keep no logs, so stream them while live
+- The PR and comment rules above apply unchanged: opening a PR or commenting still needs an explicit nod in the current session
 
 ## File Operations
 
