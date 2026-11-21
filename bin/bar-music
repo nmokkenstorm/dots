@@ -16,9 +16,24 @@ summarise() {
       + "#[fg=#e0def4]"'
 }
 
-render() { command -v media-control >/dev/null 2>&1 && media-control get 2>/dev/null | summarise; }
+TEAL_STATE="${TEAL_NOW_STATE:-$HOME/.local/state/teal-now}"
 
+# A trailing "teal" marks that teal-now is publishing; "teal 2?" means two plays wait in `teal-now review`.
+teal_marker() {
+  [ -s "$TEAL_STATE/teal-now.pid" ] && kill -0 "$(cat "$TEAL_STATE/teal-now.pid")" 2>/dev/null || return 0
+  local held=0; [ -s "$TEAL_STATE/review.jsonl" ] && held=$(grep -c . "$TEAL_STATE/review.jsonl")
+  [ "$held" -gt 0 ] && printf '#[fg=#908caa] · teal #[fg=#f6c177]%s?#[fg=#e0def4]' "$held" || printf '#[fg=#908caa] · teal#[fg=#e0def4]'
+}
+
+render() {
+  command -v media-control >/dev/null 2>&1 || return 0
+  local line; line=$(media-control get 2>/dev/null | summarise)
+  [ -n "$line" ] && printf '%s%s' "$line" "$(teal_marker)"
+}
+
+# The bar's on/off switches teal-now with it, so publishing never outlives the visible footer.
 case "${1:-}" in
   summarise) summarise ;;
+  --on|--off) command -v teal-now >/dev/null 2>&1 && teal-now "$1"; bar_main "$@" ;;
   *) bar_main "$@" ;;
 esac

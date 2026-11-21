@@ -1,0 +1,583 @@
+#!/usr/bin/env python3
+"""teal-now: publish macOS Now Playing to teal.fm through goat.
+
+Follows `media-control stream` and writes, to the account goat is logged in as:
+
+  fm.teal.actor.status  (rkey self)  while a track plays; expires on its own
+  fm.teal.feed.play     (tid)        once per play, after the scrobble threshold
+
+media-control sees every media session, browser tabs included, and every record
+is public, so a track is only published once it is known to be music:
+
+  trusted sources (Spotify, Music)  music by definition, enriched with MusicBrainz ids
+  classified sources (a browser)    allow/deny lists, then rules, then a MusicBrainz match
+  anything still unsure             held in a local review queue, never published
+
+  teal-now --on | --off | --toggle | run [--dry-run] | (status)
+  teal-now review                      list held plays
+  teal-now review approve N [--allow]  publish one (and always allow its artist)
+  teal-now review reject N [--deny]    drop one (and always deny its artist)
+
+Config: ~/.config/teal-now/config.json (TEAL_NOW_CONFIG overrides)
+  {"trusted": ["com.spotify.client"], "classified": ["org.mozilla.firefox"],
+   "allow": ["abel"], "deny": ["some podcast"], "dry_run": false}
+State, log, cache, outbox and review queue: ~/.local/state/teal-now/ (TEAL_NOW_STATE overrides)
+"""
+
+import json
+import os
+import re
+import select
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import unicodedata
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
+from pathlib import Path
+
+AGENT = "teal-now/0.2 (macos media-control; goat)"
+MB_AGENT = "teal-now/0.2 (personal scrobbler)"
+DEFAULT_TRUSTED = ["com.spotify.client", "com.apple.Music", "org.videolan.vlc"]
+TICK_SECONDS = 15
+STATUS_FALLBACK = timedelta(minutes=10)
+UNKNOWN_DURATION_THRESHOLD = 240.0
+MAX_MUSIC_SECONDS = 20 * 60
+MB_MIN_INTERVAL = 1.1
+MB_MIN_SCORE = 90
+SIMILARITY = 0.85
+DURATION_SLACK = 8.0
+
+CONFIG = Path(os.environ.get("TEAL_NOW_CONFIG", Path.home() / ".config/teal-now/config.json"))
+STATE = Path(os.environ.get("TEAL_NOW_STATE", Path.home() / ".local/state/teal-now"))
+PIDFILE = STATE / "teal-now.pid"
+OUTBOX = STATE / "outbox.jsonl"
+REVIEW = STATE / "review.jsonl"
+CACHE = STATE / "musicbrainz-cache.json"
+LOG = STATE / "teal-now.log"
+
+NOT_MUSIC_WORDS = re.compile(
+    r"\b(podcast|episode|ep\.\s?\d|livestream|live stream|stream|meeting|webinar|trailer|interview|"
+    r"reaction|reacts?|tutorial|review|unboxing|vlog|gameplay|walkthrough|lecture|keynote|talk)\b",
+    re.IGNORECASE,
+)
+VIDEO_NOISE = re.compile(
+    r"\s*[\(\[](official\s+)?(music\s+)?(video|audio|lyrics?|lyric video|visuali[sz]er|clip|hd|hq|4k|"
+    r"official|live)[^\)\]]*[\)\]]",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class Track:
+    key: str
+    title: str
+    artists: tuple
+    album: str
+    duration: float | None
+    source: str
+
+
+@dataclass(frozen=True)
+class Artist:
+    name: str
+    mbid: str | None = None
+
+
+@dataclass(frozen=True)
+class Match:
+    """A MusicBrainz recording a play was matched to."""
+
+    recording: str
+    title: str
+    artists: tuple
+    release: str | None
+    release_name: str | None
+
+
+@dataclass(frozen=True)
+class Music:
+    match: Match | None
+
+
+@dataclass(frozen=True)
+class NotMusic:
+    reason: str
+
+
+@dataclass(frozen=True)
+class Unsure:
+    reason: str
+
+
+@dataclass(frozen=True)
+class Policy:
+    trusted: frozenset
+    classified: frozenset
+    allow: frozenset = field(default_factory=frozenset)
+    deny: frozenset = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
+class Play:
+    """One continuous listen of one track: wall-clock time is only counted while playing."""
+
+    track: Track
+    verdict: object
+    started: datetime
+    listened: float
+    playing_since: datetime | None
+    scrobbled: bool
+
+
+def iso(moment):
+    return moment.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def normalise(text):
+    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().casefold()
+    return re.sub(r"[^a-z0-9]+", " ", re.sub(r"[\(\[].*?[\)\]]", " ", folded)).strip()
+
+
+def similar(a, b):
+    return SequenceMatcher(None, normalise(a), normalise(b)).ratio() >= SIMILARITY
+
+
+def clean_artist(name):
+    return re.sub(r"\s+-\s+Topic$", "", name.strip())
+
+
+def artists_of(raw):
+    """Now Playing gives one artist string; splitting it guesses wrong on names like "Simon & Garfunkel"."""
+    name = clean_artist(raw or "")
+    return (name,) if name else ()
+
+
+def track_of(payload):
+    title = (payload.get("title") or "").strip()
+    if not title:
+        return None
+    duration = payload.get("duration")
+    return Track(
+        key=payload.get("contentItemIdentifier") or f"{title}\x00{payload.get('artist', '')}",
+        title=title,
+        artists=artists_of(payload.get("artist")),
+        album=(payload.get("album") or "").strip(),
+        duration=float(duration) if isinstance(duration, (int, float)) and duration > 0 else None,
+        source=payload.get("bundleIdentifier") or "",
+    )
+
+
+def is_playing(payload):
+    return bool(payload.get("playing")) and float(payload.get("playbackRate") or 1) > 0
+
+
+def search_terms(track, raw_artist):
+    """A plain YouTube video puts "Artist - Song (Official Video)" in the title and the channel in artist."""
+    title = VIDEO_NOISE.sub("", track.title).strip()
+    if raw_artist.endswith(" - Topic") or track.album or " - " not in title:
+        return (track.artists[0] if track.artists else ""), title
+    artist, _, song = title.partition(" - ")
+    return artist.strip(), song.strip()
+
+
+def rule_verdict(track, raw_artist, policy):
+    names = {normalise(name) for name in track.artists}
+    if names & {normalise(name) for name in policy.deny}:
+        return NotMusic("denied artist")
+    if names & {normalise(name) for name in policy.allow}:
+        return Music(None)
+    if track.duration is not None and track.duration > MAX_MUSIC_SECONDS:
+        return NotMusic("longer than 20 minutes")
+    return None
+
+
+def looks_like_music(track, raw_artist):
+    return raw_artist.endswith(" - Topic") or raw_artist.endswith("VEVO") or bool(track.album)
+
+
+def best_match(candidates, artist, title, duration):
+    """The highest-scoring recording whose title and an artist agree, and whose length fits if both are known."""
+
+    def fits(candidate):
+        length = candidate.get("length")
+        return (
+            candidate.get("score", 0) >= MB_MIN_SCORE
+            and similar(candidate.get("title", ""), title)
+            and any(similar(credit.get("name", ""), artist) for credit in candidate.get("artist-credit", []))
+            and (duration is None or not length or abs(length / 1000 - duration) <= DURATION_SLACK)
+        )
+
+    found = next((candidate for candidate in candidates if fits(candidate)), None)
+    if found is None:
+        return None
+    release = (found.get("releases") or [{}])[0]
+    return Match(
+        recording=found["id"],
+        title=found.get("title", title),
+        artists=tuple(Artist(c.get("name", ""), c.get("artist", {}).get("id")) for c in found.get("artist-credit", [])),
+        release=release.get("id"),
+        release_name=release.get("title"),
+    )
+
+
+def classify(track, raw_artist, policy, lookup):
+    """lookup(artist, title) returns MusicBrainz recording candidates; it is the only IO."""
+    if track.source in policy.trusted:
+        artist, title = search_terms(track, raw_artist)
+        return Music(best_match(lookup(artist, title), artist, title, track.duration) if artist else None)
+    ruled = rule_verdict(track, raw_artist, policy)
+    if ruled is not None:
+        return ruled
+    artist, title = search_terms(track, raw_artist)
+    match = best_match(lookup(artist, title), artist, title, track.duration) if artist and title else None
+    if match is not None:
+        return Music(match)
+    if NOT_MUSIC_WORDS.search(track.title):
+        return NotMusic("title reads as non-music and nothing matched")
+    if looks_like_music(track, raw_artist):
+        return Music(None)
+    return Unsure("no confident MusicBrainz match")
+
+
+def threshold(track):
+    """Last.fm's rule, which teal clients follow: half the track or four minutes, never under 30s tracks."""
+    if track.duration is None:
+        return UNKNOWN_DURATION_THRESHOLD
+    if track.duration <= 30:
+        return None
+    return min(track.duration / 2, 240.0)
+
+
+def listened_at(play, now):
+    running = (now - play.playing_since).total_seconds() if play.playing_since else 0.0
+    return play.listened + max(running, 0.0)
+
+
+def due(play, now):
+    limit = threshold(play.track)
+    return not play.scrobbled and limit is not None and listened_at(play, now) >= limit
+
+
+def mbid(value):
+    return f"mbid:{value}" if value else None
+
+
+def described(track, verdict):
+    match = verdict.match if isinstance(verdict, Music) else None
+    artists = match.artists if match else tuple(Artist(name) for name in track.artists)
+    view = {
+        "trackName": match.title if match else track.title,
+        "artists": [
+            {"artistName": a.name, **({"artistMbId": mbid(a.mbid)} if a.mbid else {})} for a in artists if a.name
+        ],
+    }
+    release = (match.release_name if match else None) or track.album
+    extras = {
+        "releaseName": release or None,
+        "duration": round(track.duration) if track.duration is not None else None,
+        "recordingMbId": mbid(match.recording) if match else None,
+        "releaseMbId": mbid(match.release) if match else None,
+    }
+    return {**view, **{key: value for key, value in extras.items() if value is not None}}
+
+
+def play_record(play):
+    return {
+        "$type": "fm.teal.feed.play",
+        **described(play.track, play.verdict),
+        "playedTime": iso(play.started),
+        "submissionClientAgent": AGENT,
+    }
+
+
+def status_record(play, now):
+    remaining = (
+        timedelta(seconds=max(play.track.duration - listened_at(play, now), 0) + 60)
+        if play.track.duration is not None
+        else STATUS_FALLBACK
+    )
+    item = {**described(play.track, play.verdict), "playedTime": iso(play.started)}
+    return {"$type": "fm.teal.actor.status", "time": iso(now), "expiry": iso(now + remaining), "item": item}
+
+
+def step(play, payload, now, policy, judge):
+    """Fold one Now Playing snapshot into the current play; judge(track, raw_artist) runs once per track."""
+    track = track_of(payload)
+    watched = track is not None and track.source in (policy.trusted | policy.classified)
+    playing = watched and is_playing(payload)
+    effects = []
+    if play is not None and (not watched or track.key != play.track.key):
+        if isinstance(play.verdict, Music) and play.playing_since is not None and not playing:
+            effects.append(("clear_status",))
+        play = None
+    if not watched:
+        return play, effects
+    if play is None:
+        verdict = judge(track, payload.get("artist") or "")
+        play = Play(track, verdict, now, 0.0, now if playing else None, False)
+        if playing and isinstance(verdict, Music):
+            effects.append(("status", status_record(play, now)))
+        return play, effects
+    if track != play.track:
+        play = replace(play, track=track)
+    if playing and play.playing_since is None:
+        play = replace(play, playing_since=now)
+        if isinstance(play.verdict, Music):
+            effects.append(("status", status_record(play, now)))
+    if not playing and play.playing_since is not None:
+        play = replace(play, listened=listened_at(play, now), playing_since=None)
+        if isinstance(play.verdict, Music):
+            effects.append(("clear_status",))
+    return tick(play, now, effects)
+
+
+def tick(play, now, effects=None):
+    effects = list(effects or [])
+    if play is None or not due(play, now):
+        return play, effects
+    outcome = {Music: "play", Unsure: "review"}.get(type(play.verdict))
+    if outcome == "play":
+        effects.append(("play", play_record(play)))
+    if outcome == "review":
+        effects.append(("review", {"record": play_record(play), "reason": play.verdict.reason, "at": iso(now)}))
+    return replace(play, scrobbled=True), effects
+
+
+def merge(snapshot, event):
+    if event.get("type") != "data":
+        return snapshot
+    payload = event.get("payload") or {}
+    return {**snapshot, **payload} if event.get("diff") else dict(payload)
+
+
+def log(line):
+    STATE.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a") as handle:
+        handle.write(f"{iso(datetime.now(timezone.utc))} {line}\n")
+
+
+def read_jsonl(path):
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
+
+
+def write_jsonl(path, rows):
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+
+def append_jsonl(path, row):
+    STATE.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as handle:
+        handle.write(json.dumps(row) + "\n")
+
+
+class MusicBrainz:
+    """Recording search with an on-disk cache and MusicBrainz's one-request-per-second etiquette."""
+
+    def __init__(self):
+        self.last = 0.0
+        try:
+            self.cache = json.loads(CACHE.read_text())
+        except (OSError, ValueError):
+            self.cache = {}
+
+    def __call__(self, artist, title):
+        key = f"{normalise(artist)}\x00{normalise(title)}"
+        if key in self.cache:
+            return self.cache[key]
+        query = f'recording:"{title}" AND artist:"{artist}"'
+        url = "https://musicbrainz.org/ws/2/recording?" + urllib.parse.urlencode({"query": query, "fmt": "json", "limit": 5})
+        time.sleep(max(0.0, self.last + MB_MIN_INTERVAL - time.monotonic()))
+        self.last = time.monotonic()
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": MB_AGENT, "Accept": "application/json"})
+            with urllib.request.urlopen(request, timeout=8) as response:
+                candidates = json.load(response).get("recordings", [])
+        except (OSError, ValueError) as error:
+            log(f"musicbrainz lookup failed for {artist!r} / {title!r}: {error}")
+            return []
+        self.cache[key] = candidates
+        CACHE.write_text(json.dumps(self.cache))
+        return candidates
+
+
+def goat(args):
+    result = subprocess.run(["goat", *args], capture_output=True, text=True, timeout=30)
+    return result.returncode == 0, (result.stderr or result.stdout).strip()
+
+
+def goat_with(args, record):
+    """goat record update only reads a file path, so both writes go through one."""
+    with tempfile.NamedTemporaryFile("w", suffix=".json", dir=STATE, delete=True) as handle:
+        json.dump(record, handle)
+        handle.flush()
+        return goat([*args, handle.name])
+
+
+def write_status(record):
+    ok, err = goat_with(["record", "update", "--no-validate", "-r", "self"], record)
+    return (ok, err) if ok else goat_with(["record", "create", "--no-validate", "-r", "self"], record)
+
+
+def clear_status():
+    return goat(["record", "delete", "-c", "fm.teal.actor.status", "-r", "self"])
+
+
+def write_play(record):
+    return goat_with(["record", "create", "--no-validate"], record)
+
+
+def flush_outbox():
+    write_jsonl(OUTBOX, [record for record in read_jsonl(OUTBOX) if not write_play(record)[0]])
+
+
+def apply(effect, dry_run):
+    kind, *payload = effect
+    if dry_run:
+        print(json.dumps({"effect": kind, "record": payload[0] if payload else None}), flush=True)
+        return
+    if kind == "review":
+        append_jsonl(REVIEW, payload[0])
+        return
+    ok, err = {
+        "status": lambda: write_status(payload[0]),
+        "clear_status": clear_status,
+        "play": lambda: write_play(payload[0]),
+    }[kind]()
+    if not ok:
+        log(f"{kind} failed: {err}")
+        if kind == "play":
+            append_jsonl(OUTBOX, payload[0])
+
+
+def load_config():
+    try:
+        return json.loads(CONFIG.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def policy_of(config):
+    return Policy(
+        trusted=frozenset(config.get("trusted", DEFAULT_TRUSTED)),
+        classified=frozenset(config.get("classified", [])),
+        allow=frozenset(config.get("allow", [])),
+        deny=frozenset(config.get("deny", [])),
+    )
+
+
+def remember(list_name, name):
+    config = load_config()
+    names = config.get(list_name, [])
+    if name and name not in names:
+        CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG.write_text(json.dumps({**config, list_name: [*names, name]}, indent=2) + "\n")
+
+
+def run(dry_run_flag):
+    STATE.mkdir(parents=True, exist_ok=True)
+    config = load_config()
+    policy, dry_run = policy_of(config), dry_run_flag or bool(config.get("dry_run", False))
+    lookup = MusicBrainz()
+
+    def judge(track, raw_artist):
+        verdict = classify(track, raw_artist, policy, lookup)
+        log(f"{track.source} {track.title!r} by {raw_artist!r}: {type(verdict).__name__}")
+        return verdict
+
+    stream = subprocess.Popen(["media-control", "stream"], stdout=subprocess.PIPE, text=True, bufsize=1)
+    signal.signal(signal.SIGTERM, lambda *_: (stream.terminate(), sys.exit(0)))
+    snapshot, play = {}, None
+    try:
+        while stream.poll() is None:
+            ready, _, _ = select.select([stream.stdout], [], [], TICK_SECONDS)
+            now = datetime.now(timezone.utc)
+            if ready:
+                line = stream.stdout.readline()
+                if not line:
+                    break
+                try:
+                    snapshot = merge(snapshot, json.loads(line))
+                except ValueError:
+                    continue
+                play, effects = step(play, snapshot, now, policy, judge)
+            else:
+                play, effects = tick(play, now)
+                if not dry_run:
+                    flush_outbox()
+            for effect in effects:
+                apply(effect, dry_run)
+    finally:
+        if play is not None and play.playing_since is not None and isinstance(play.verdict, Music):
+            apply(("clear_status",), dry_run)
+        stream.terminate()
+
+
+def review(argv):
+    held = read_jsonl(REVIEW)
+    if not argv:
+        for index, row in enumerate(held, 1):
+            record = row["record"]
+            artists = ", ".join(a["artistName"] for a in record.get("artists", []))
+            print(f"{index:>3}  {record['trackName']}  ·  {artists}  ({row['reason']}, {record['playedTime']})")
+        print(f"{len(held)} held" if held else "nothing held")
+        return
+    action, index = argv[0], int(argv[1]) - 1
+    row = held[index]
+    first_artist = (row["record"].get("artists") or [{}])[0].get("artistName", "")
+    if action == "approve":
+        ok, err = write_play(row["record"])
+        if not ok:
+            sys.exit(f"teal-now: publish failed: {err}")
+        if "--allow" in argv:
+            remember("allow", first_artist)
+    if action == "reject" and "--deny" in argv:
+        remember("deny", first_artist)
+    write_jsonl(REVIEW, held[:index] + held[index + 1 :])
+    print(f"{action}d: {row['record']['trackName']}")
+
+
+def running():
+    try:
+        os.kill(int(PIDFILE.read_text()), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def on():
+    if running():
+        return
+    STATE.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a") as out:
+        child = subprocess.Popen([sys.argv[0], "run"], stdout=out, stderr=out, start_new_session=True)
+    PIDFILE.write_text(str(child.pid))
+
+
+def off():
+    if running():
+        os.kill(int(PIDFILE.read_text()), signal.SIGTERM)
+    PIDFILE.unlink(missing_ok=True)
+
+
+def main(argv):
+    command = argv[0] if argv else ""
+    actions = {
+        "--on": on,
+        "--off": off,
+        "--toggle": lambda: off() if running() else on(),
+        "run": lambda: run("--dry-run" in argv),
+        "review": lambda: review(argv[1:]),
+    }
+    if command in actions:
+        return actions[command]()
+    print(f"teal-now: running (pid {PIDFILE.read_text()})" if running() else "teal-now: off")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
