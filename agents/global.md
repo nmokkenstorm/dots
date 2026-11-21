@@ -123,6 +123,11 @@ Default: no comment at all. Write one only when the WHY is non-obvious (hidden c
 - Keep ad hoc watcher scripts in the session scratchpad, never committed to the repo; but their STATE must not live there. Anything another session, the prefix+M popup, or a future machine should see goes through the `train` CLI or reeds, both global to the user, never through per-session state files
 - For merge/release sequences specifically, skip the bespoke script entirely: create a real train (`train new` + `train mark`, see Merge trains under External Tools) even when the steps are driven by agents rather than `train run`
 
+### Research
+
+- Before reading a repository to answer a question or plan work, `git fetch` and read the default branch's remote ref (`origin/main`) with `git show`/`git grep`, not the local checkout: a checkout can sit on an old or unrelated branch, and conclusions drawn from it are silently stale
+- Say which ref the findings come from when it matters, and recheck against the remote ref before acting on anything read earlier in a long session
+
 ### Planning
 
 - Do a planning phase for non-trivial tasks; get approval before implementing complex changes
